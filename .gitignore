@@ -1,0 +1,10 @@
+# macOS system files
+.DS_Store
+
+# Editor noise
+*.swp
+*~
+
+# Plugin author scratch
+node_modules/
+dist/

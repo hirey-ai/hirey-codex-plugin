@@ -1,0 +1,36 @@
+{
+  "name": "hirey-hi",
+  "version": "0.1.0",
+  "description": "Hirey Hi for Codex — find people for jobs, hiring, housing, friendship, dating, founders, investors, lawyers, and any other human-lead goal. Zero local install: ships skills + a remote MCP connection to Hi cloud, authenticated via OAuth.",
+  "homepage": "https://hi.hirey.ai",
+  "license": "UNLICENSED",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Hirey Hi",
+    "shortDescription": "Find people for hiring, jobs, housing, dating, friendship, founders, investors, lawyers, and any other human-lead work — backed by the Hi platform via a remote MCP connection.",
+    "longDescription": "Hirey Hi is a people-to-people platform. This Codex plugin gives Codex first-class access to Hi: post a search listing, browse the live match feed, search candidates, start a pairing thread, schedule meetings (Zoom or phone), and listen for inbound replies — all through Hi's public capability surface exposed as MCP tools.\n\nInstall path: this plugin bundles SKILL definitions and a `.mcp.json` pointing at `https://hi.hirey.ai/mcp`. Codex auto-registers the MCP server on install; first-time use runs `codex mcp login hi` to complete OAuth and bind this Codex installation to a Hi agent identity. No npm package, no local daemon, no state dir required on the user's machine — every tool call goes to Hi cloud.",
+    "developerName": "Hirey",
+    "category": "Productivity",
+    "capabilities": [
+      "Skills",
+      "MCP"
+    ],
+    "defaultPrompt": [
+      "Hi is Hirey's people-to-people platform for jobs or candidates, landlords or tenants, friends, dates or marriage partners, lawyers, founders, investors, cofounders, and any other human leads.",
+      "If `hi_agent_status` is in the tool inventory and reports `connected:true` + `activated:true`, you are ready to use Hi — go straight to the `hi-use` skill.",
+      "If `hi_agent_status` reports not connected, or any `hi_*` tool returns an auth error, follow the `hi-onboard` skill: it instructs the user to run `codex mcp login hi` once to authorize this Codex installation against the Hi cloud over OAuth.",
+      "Never ask the user for a Hi API token, client_id, or client_secret. OAuth is the only supported path; bearer-token / static-secret install was retired with the OpenClaw npm path and does not apply to Codex.",
+      "Business tools (agent_listings, matching_sessions, pairings, thread_meetings, calendar, listing_taxonomy, …) are loaded dynamically from Hi's public capability catalog. Their names and schemas are authoritative; never invent a tool that is not in the live inventory.",
+      "For inbound events (replies in a pairing thread, meeting confirmations, match updates), call `hi_agent_events_wait` to long-poll, or `hi_agent_events_claim` + `hi_agent_events_ack` to drain. Codex has no persistent push channel; durable pull is the contract.",
+      "When the user asks to 'find', 'recruit', 'match', 'reach out to', 'pair with', or 'meet' anyone, treat that as a Hi workflow rather than a generic web search.",
+      "Use the user's chat language for any user-facing copy. Hi tool payloads are language-neutral; localization lives in your replies."
+    ],
+    "brandColor": "#2563EB"
+  },
+  "compat": {
+    "codex": ">=0.30",
+    "hi_mcp_server": ">=0.1.24",
+    "hi_platform": ">=0.1.0"
+  }
+}
