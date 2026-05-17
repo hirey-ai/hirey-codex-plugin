@@ -1,5 +1,4 @@
 {
-  "_doc": "Codex marketplace catalog for Hirey Hi. Per the official Codex plugin-creator spec (~/.codex/skills/.system/plugin-creator/references/plugin-json-spec.md), this file MUST live at <repo-root>/.agents/plugins/marketplace.json and each entry's `source.path` is resolved RELATIVE to this marketplace.json — `./plugins/<name>` therefore points at <repo-root>/.agents/plugins/plugins/<name>/. Codex finds this file when a user runs `codex plugin marketplace add hirey-ai/hirey-codex-plugin`.",
   "name": "hirey",
   "interface": {
     "displayName": "Hirey"

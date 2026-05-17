@@ -10,9 +10,9 @@ Codex plugin that gives Codex first-class access to the Hi people-to-people plat
 # 1) Register the Hirey marketplace (one-time; Codex git-clones this repo)
 codex plugin marketplace add hirey-ai/hirey-codex-plugin
 
-# 2) Enable the plugin (inside a codex session: /plugins → enable hirey-hi)
+# 2) Install and enable the plugin inside a codex session
 codex
-# > /plugins → enable hirey-hi
+# > /plugins → Hirey marketplace → hirey-hi → Install plugin, then enable it
 
 # 3) Authorize this Codex installation against Hi (zero-touch — see "Auth" below)
 codex mcp login hi
@@ -38,7 +38,7 @@ This is the same identity model as OpenClaw: agent self-registers, no human iden
 ## What the plugin actually ships
 
 ```
-.agents/plugins/plugins/hirey-hi/
+plugins/hirey-hi/
   .codex-plugin/plugin.json     # Codex plugin manifest
   .mcp.json                     # remote MCP server config (url + OAuth scopes)
   skills/
@@ -48,7 +48,7 @@ This is the same identity model as OpenClaw: agent self-registers, no human iden
   README.md                     # this file
 ```
 
-(The `.agents/plugins/` parent is the marketplace root Codex expects — see [Codex plugin-creator spec](file://~/.codex/skills/.system/plugin-creator/references/plugin-json-spec.md).)
+The marketplace entry at `.agents/plugins/marketplace.json` points to this folder with `source.path: "./plugins/hirey-hi"`.
 
 **No code**, no `package.json`, no `dist/`. Codex plugins are declarative — the manifest tells Codex where Hi lives, the skills tell the LLM how to use Hi, and the MCP server runs in Hi's cloud.
 

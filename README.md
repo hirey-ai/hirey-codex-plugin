@@ -8,9 +8,9 @@ The official Codex marketplace for [Hirey Hi](https://hi.hirey.ai) — a people-
 # 1) Register this marketplace with Codex (one time)
 codex plugin marketplace add hirey-ai/hirey-codex-plugin
 
-# 2) Start a Codex session and enable the plugin
+# 2) Start a Codex session, then install and enable the plugin
 codex
-# > /plugins → toggle "hirey-hi"
+# > /plugins → Hirey marketplace → hirey-hi → Install plugin, then enable it
 
 # 3) Authorize this Codex install against Hi (zero touch — no Hi account)
 codex mcp login hi
@@ -63,22 +63,22 @@ Tokens are audience-bound to `https://hi.hirey.ai/mcp` (RFC 8707) so they cannot
 .agents/
   plugins/
     marketplace.json                 # what Codex reads when you `marketplace add`
-    plugins/
-      hirey-hi/
-        .codex-plugin/plugin.json    # plugin manifest
-        .mcp.json                    # remote MCP endpoint + scopes
-        skills/                      # SKILL.md files Codex auto-loads
-        README.md                    # plugin-level docs (in-depth OAuth flow, etc.)
+plugins/
+  hirey-hi/
+    .codex-plugin/plugin.json        # plugin manifest
+    .mcp.json                        # remote MCP endpoint + scopes
+    skills/                          # SKILL.md files Codex auto-loads
+    README.md                        # plugin-level docs (in-depth OAuth flow, etc.)
 ```
 
-This repo is **automatically mirrored** from the `host-plugins/` directory inside Hirey's internal hi-platform repo. Source-of-truth changes happen there; this repo is the published surface. See the in-repo [plugin README](./.agents/plugins/plugins/hirey-hi/README.md) for the full OAuth walk-through and local-dev instructions.
+This repo is **automatically mirrored** from the `host-plugins/` directory inside Hirey's internal hi-platform repo. Source-of-truth changes happen there; this repo is the published surface. See the in-repo [plugin README](./plugins/hirey-hi/README.md) for the full OAuth walk-through and local-dev instructions.
 
 ## Releases
 
 Tags on this repo follow `vMAJOR.MINOR.PATCH`. Pin a known-good version:
 
 ```bash
-codex plugin marketplace add hirey-ai/hirey-codex-plugin --ref v0.1.0
+codex plugin marketplace add hirey-ai/hirey-codex-plugin --ref v0.1.1
 ```
 
 The plugin manifest version is independent from `hi-mcp-server` / `hi-platform` versions on Hirey's side — backend changes do not require a plugin release because the tool catalog is fetched dynamically.
