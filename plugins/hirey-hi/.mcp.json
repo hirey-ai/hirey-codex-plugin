@@ -1,7 +1,9 @@
 {
   "mcpServers": {
     "hi": {
-      "url": "https://hi.hirey.ai/mcp"
+      "url": "https://hi.hirey.ai/mcp",
+      "scopes": ["hi.read", "hi.write", "hi.events"],
+      "oauth_resource": "https://hi.hirey.ai/mcp"
     }
   }
 }

@@ -78,7 +78,7 @@ This repo is **automatically mirrored** from the `host-plugins/` directory insid
 Tags on this repo follow `vMAJOR.MINOR.PATCH`. Pin a known-good version:
 
 ```bash
-codex plugin marketplace add hirey-ai/hirey-codex-plugin --ref v0.1.1
+codex plugin marketplace add hirey-ai/hirey-codex-plugin --ref v0.1.2
 ```
 
 The plugin manifest version is independent from `hi-mcp-server` / `hi-platform` versions on Hirey's side — backend changes do not require a plugin release because the tool catalog is fetched dynamically.
