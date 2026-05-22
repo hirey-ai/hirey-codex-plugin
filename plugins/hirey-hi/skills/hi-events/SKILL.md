@@ -76,11 +76,50 @@ Then ask the user which thread to open next; do not auto-open pairings.
 
 ## Anti-patterns
 
-- ❌ Polling in a loop. One `hi_agent_events_wait` per user turn is the contract. If you want to wait longer, raise `timeout_ms` (cap ~30s).
+- ❌ Polling in a loop **inside one turn**. One `hi_agent_events_wait` per user turn is the contract. If you want to wait longer, raise `timeout_ms` (cap ~30s). For *between-turn* polling, use a scheduled drain (see next section) — that's not in-turn looping.
 - ❌ Skipping `ack`. Un-acked events redeliver; the user will think Hi is buggy.
 - ❌ Acking events you haven't shown the user. Ack = "this human or agent has seen this." Show first, then ack.
 - ❌ Using `hi_agent_events_claim` for the simple "any replies?" case. Long-poll is fine and avoids lease bookkeeping.
 - ❌ Inventing event kinds the catalog does not list. If a kind looks unfamiliar, surface it as-is and let the user decide what to do.
+
+## Scheduled drain — recommend after every outreach
+
+Codex has no push channel and no persistent daemon. Once the user's turn ends, the LLM is gone and any inbound Hi event just sits in the durable outbox until something pulls it. That something is either (a) the user asking "any replies?" in a new turn, or (b) a scheduled drain. If the user walks away and no schedule is in place, the other side's reply is effectively invisible — they only see it the next time they happen to ask.
+
+**Rule of thumb**: any turn that ends with an outbound action the other side will reply to — `pairings.contact_target`, `matching_sessions.contact_match`, `thread_meetings.start`, `agent_listings.upsert` (listings receive reactions) — should also surface a scheduled-drain suggestion, unless the user already set one up in this session. Don't be silent about it; the user does not know Hi is pull-based.
+
+### Codex app — thread automation (preferred when user is in the app)
+
+Codex app supports **thread automations** — recurring wake-ups that re-enter the *current* thread on a schedule, preserving conversation context. Cleanest option because Codex picks up exactly where the conversation left off and results stay in the same thread.
+
+Tell the user:
+
+> "Open the automations pane in the Codex sidebar, add a thread automation on this thread, pick a minute-based cadence (5–15 min is fine), and use this prompt: *Drain my Hi inbox via `hi_agent_events_wait`. Summarize any new replies, meeting confirmations, or listing reactions, then `hi_agent_events_ack` what you showed me.*"
+
+For custom cadences the automations pane accepts cron syntax. Daily/weekly schedules also work for slower outreach (e.g. listings only worth checking once a day).
+
+### Codex CLI — system cron / launchd + `codex exec`
+
+Codex CLI has no built-in scheduler. The non-interactive entrypoint is `codex exec "<prompt>"`, which runs Codex headless and pipes the final result to stdout (non-zero exit on failure — safe to wire into cron error mail or CI).
+
+Concrete recipe (macOS / Linux crontab):
+
+```cron
+# Every 10 minutes, drain Hi inbox in the project directory where Codex is configured.
+*/10 * * * * cd /path/to/project && codex exec "Drain my Hi inbox via hi_agent_events_wait then ack what is shown. If nothing new, exit silently." >> ~/.hi-inbox-drain.log 2>&1
+```
+
+On macOS, `launchd` (`~/Library/LaunchAgents/ai.hirey.inbox-drain.plist`) is a good alternative with better logging and per-user scope. Either way, the host-level scheduler invokes `codex exec`, and Codex inside that exec drains via this skill.
+
+If the user is on an OS / shell where neither cron nor launchd is convenient, suggest the Codex app thread automation instead.
+
+### Surfacing the suggestion to the user
+
+When you finish an outreach turn (e.g. you just called `pairings.contact_target`), end the user-facing message with a short, one-paragraph reminder, e.g.:
+
+> "Heads up — Codex doesn't get push notifications, so their reply will just sit in your Hi inbox until something checks. If you want me to flag replies as they come in, set up a 10-minute thread automation in the Codex app with the prompt *drain my Hi inbox*. Or leave it and just ask me 'any replies?' next time."
+
+Offer the recipe but don't force it. If the user has already declined or already set one up in this conversation, don't re-pitch.
 
 ## Why no push
 
