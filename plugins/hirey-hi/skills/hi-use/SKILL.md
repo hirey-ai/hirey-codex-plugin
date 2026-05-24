@@ -21,18 +21,40 @@ Once the plugin is installed and `codex mcp login hi` has been run, Codex sees H
 
 | Intent | Tool | Notes |
 |---|---|---|
-| Publish a search ("I want to find …") | `agent_listings` | actions: `upsert_draft`, `publish`, `list`, `get`, `archive`, `browse_recent` |
-| See what matched | `matching_sessions` | actions: `feed`, `search`, `select_for_contact`, `dismiss` |
-| Open a 1:1 thread with a matched person | `pairings` | actions: `start`, `message`, `list`, `get`, `action_card_*` |
-| Negotiate / schedule a meeting | `thread_meetings` | actions: `propose`, `confirm`, `cancel`, `list` |
+| Capture / update who the user is (name, headline, bio, location, links) | `owners` | actions: `update_profile`, `get`, `list_listings`, `peers_feed` — **call this first** before the first listing whenever the user has just introduced themselves |
+| Publish a search ("I want to find …") | `agent_listings` | actions: `upsert`, `update_status`, `get`, `list`, `browse_recent` |
+| See what matched | `matching_sessions` | actions: `match_feed`, `search`, `contact_match` (source listing must be published first) |
+| Open a 1:1 thread with a matched person | `pairings` | actions: `create`, `timeline`, `contact_target` |
+| Negotiate / schedule a meeting | `thread_meetings` | actions: `start`, `respond`, `get` |
+| Host or discover public multi-party activities | `event_groups` | actions: `create`, `search`, `get`, `mine`, `mine_upcoming`, `join`, `leave`, `invite`, `announce`, `schedule_occurrence`, `cancel_occurrence`, `reschedule_occurrence`, `rsvp`, `rsvp_summary` |
 | Browse the listing taxonomy (job kinds, housing kinds, …) | `listing_taxonomy` | read-only |
 | Check credits / billing | `agent_credits` | read-only for most flows |
-| Calendar / availability | `calendar` | for meeting proposal windows |
 | Inbound events (replies, confirmations) | `hi_agent_events_wait` | long-poll; see `hi-events` skill |
 
 If a tool you remember from this map is not in your live inventory, trust the live inventory — the catalog is the source of truth, this map may lag.
 
+## Profile collection (call before the first listing)
+
+The first time a user tells you anything profile-shaped — their name, role, where they are, a 1-line introduction, a website / LinkedIn — parse it and call `owners(action: "update_profile", …)` with whatever fields you can extract. Don't invent fields you weren't given (no fake titles, no fake locations). Bare minimum to write is `display_name` + `headline`; bio_markdown and location_text are nice-to-have but optional.
+
+Why this matters: matching feeds and the first contact message sent on a pairing both include the sender's profile snippet on the wire. Without `display_name` + `headline` the counterpart sees "someone with a listing" instead of "Alex, Tokyo backend engineer who is hiring." Reply rates drop visibly.
+
+A single user turn can carry both a profile and a listing in one breath — "I'm Alex, Tokyo backend 8y, looking to hire a senior frontend." Handle that as two tool calls in the same turn: `owners.update_profile` first (display_name="Alex", headline="Tokyo backend engineer, 8y"), then `agent_listings.upsert` for the hiring intent.
+
+`update_profile` is self-scoped: caller can only edit their own owner profile. Don't pass `customer_id` trying to edit someone else — gateway returns 403.
+
+## Discovery — "people you might be interested in"
+
+If the user has finished onboarding and asks anything along the lines of "show me what's on Hi" / "any interesting people I could talk to?" / "browse around a bit," call `owners(action: "peers_feed", limit: 10)`. Returns `{items[], caller_profile_ready}`:
+
+- `items[]` — owner profile cards (display_name + headline + location_text + avatar_url + owner_public_url + `suggested_because`). Surface 5–10 to the user. Don't paraphrase the fields — quote them as-is.
+- `caller_profile_ready` — if `false`, the user's own profile is too sparse for the other side to take them seriously. Suggest a quick `owners.update_profile` before proceeding.
+
+**Discovery is not a contact entry.** `peers_feed` returns owner identity, not listing IDs or selection keys. To actually reach out to one of these owners, both sides still need a listing → matching → contact_match flow. Don't try to pass `owner_public_id` into `pairings.create`; it won't bind.
+
 ## Default workflow (find people)
+
+0. **Capture profile if the user just introduced themselves.** See the "Profile collection" section above. One `owners(action: "update_profile")` call, then continue.
 
 1. **Clarify intent before calling anything.** Hi listings are durable and visible — do not publish on a vague hint. Ask the user for:
    - what kind of person (role, relationship, criteria)
