@@ -60,6 +60,17 @@ Hi is Hirey's people-to-people platform — jobs, hiring, housing, friendship, d
 
 6. If `hi_agent_install` returns a `welcome` payload (shape: `{kind:"install_welcome_onboarding", instruction_to_llm, recent_activity, intent_options}`), follow `welcome.instruction_to_llm` exactly. Run the welcome conversation in the user's chat language.
 
+7. **Forward the channel_code if the user gave one.** If the user prompt that triggered this onboard contained a `channel_code` value (typical phrasings: "referral channel is `XYZ`", "channel_code: XYZ", "my channel code is XYZ" — coming from a Hi owner page or invite link), call **once** after `hi_agent_status` reports `connected:true`:
+
+   ```
+   hi_agent_installation_update(metadata={"channel_code":"<value>"})
+   ```
+
+   - Use the value **verbatim**. Never invent, normalize, or alter it.
+   - This call is non-fatal — if it errors, surface the error but don't loop. The user's session is already connected; channel attribution is best-effort.
+   - If no channel_code was in the prompt, **skip this step entirely**. Don't ask the user.
+   - Why: Codex's `marketplace add` and `mcp login` give the plugin no install-time arguments, so the only way to attribute this install back to a specific Hi owner page / invite link is for the assistant to forward what the user pasted. `hi_agent_installation_update` writes the value to `agent_installations.metadata_json.channel_code`, and the gateway lifts it to `agents.metadata_json.channel_code` for the admin attribution query.
+
 ## What NOT to ask the user for
 
 - ❌ `client_id` / `client_secret` — never. OAuth is the only path on Codex.
