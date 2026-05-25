@@ -1,6 +1,6 @@
 {
   "name": "hirey-hi",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Hirey Hi for Codex — find people for jobs, hiring, housing, friendship, dating, founders, investors, lawyers, and any other human-lead goal. Zero local install: ships skills + a remote MCP connection to Hi cloud, authenticated via OAuth.",
   "homepage": "https://hi.hirey.ai",
   "license": "UNLICENSED",
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Hirey Hi",
     "shortDescription": "Find people for hiring, jobs, housing, dating, friendship, founders, investors, lawyers, and any other human-lead work — backed by the Hi platform via a remote MCP connection.",
-    "longDescription": "Hirey Hi is a people-to-people platform. This Codex plugin gives Codex first-class access to Hi: post a search listing, browse the live match feed, search candidates, start a pairing thread, schedule meetings (Zoom or phone), and listen for inbound replies — all through Hi's public capability surface exposed as MCP tools.\n\nInstall path: this plugin bundles SKILL definitions and a `.mcp.json` pointing at `https://hi.hirey.ai/mcp`. After enabling in `/plugins`, fully quit and relaunch Codex so the MCP server actually loads (Codex spawns MCP servers only at session start — openai/codex#4955, #7767). Then run `codex mcp login hi` once to complete OAuth and bind this Codex installation to a Hi agent identity. No npm package, no local daemon, no state dir required on the user's machine — every tool call goes to Hi cloud.",
+    "longDescription": "Hirey Hi is a people-to-people platform. This Codex plugin gives Codex first-class access to Hi: post a search listing, browse the live match feed, search candidates, start a pairing thread, schedule meetings (Zoom or phone), and listen for inbound replies — all through Hi's public capability surface exposed as MCP tools.\n\nInstall path: this plugin bundles SKILL definitions and a `.mcp.json` pointing at `https://mcp.hirey.ai/mcp`. After enabling in `/plugins`, fully quit and relaunch Codex so the MCP server actually loads (Codex spawns MCP servers only at session start — openai/codex#4955, #7767). Then run `codex mcp login hi` once to complete OAuth and bind this Codex installation to a Hi agent identity. No npm package, no local daemon, no state dir required on the user's machine — every tool call goes to Hi cloud.",
     "developerName": "Hirey",
     "category": "Productivity",
     "capabilities": [

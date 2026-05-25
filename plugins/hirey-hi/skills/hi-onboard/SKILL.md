@@ -5,7 +5,7 @@ description: First-time setup for Hirey Hi inside Codex. Use whenever `hi_agent_
 
 # Hi Onboard (first-time setup, Codex remote-MCP)
 
-Hi is Hirey's people-to-people platform — jobs, hiring, housing, friendship, dating, lawyers, founders, investors, cofounders, any human lead. This Codex plugin runs entirely through a remote MCP server at `https://hi.hirey.ai/mcp`. **There is no local install, no Hi account to sign up for, and no consent screen to click through** — Codex's `mcp login` step does Dynamic Client Registration + an automated PKCE handshake, and the Hi server provisions a fresh anonymous agent identity for this Codex installation in the background. This mirrors OpenClaw's existing zero-touch `hi_agent_install` model.
+Hi is Hirey's people-to-people platform — jobs, hiring, housing, friendship, dating, lawyers, founders, investors, cofounders, any human lead. This Codex plugin runs entirely through a remote MCP server at `https://mcp.hirey.ai/mcp` (the legacy alias `https://hi.hirey.ai/mcp` is preserved for installs published before the cutover and continues to work — both URLs route to the same backend and accept the same tokens). **There is no local install, no Hi account to sign up for, and no consent screen to click through** — Codex's `mcp login` step does Dynamic Client Registration + an automated PKCE handshake, and the Hi server provisions a fresh anonymous agent identity for this Codex installation in the background. This mirrors OpenClaw's existing zero-touch `hi_agent_install` model.
 
 ## Use when
 
@@ -46,7 +46,7 @@ Hi is Hirey's people-to-people platform — jobs, hiring, housing, friendship, d
    ```
 
    This triggers Codex's automated OAuth flow:
-   - Codex discovers Hi's authorization server via `https://hi.hirey.ai/.well-known/oauth-protected-resource`
+   - Codex discovers Hi's authorization server via `https://mcp.hirey.ai/.well-known/oauth-protected-resource` (or `https://hi.hirey.ai/.well-known/oauth-protected-resource` for legacy installs — same metadata, different host)
    - Codex DCR-registers itself at `/oauth/register`, which **also auto-provisions a fresh anonymous Hi agent identity** behind the scenes (no Hi account, no signup)
    - Codex opens a browser at `/oauth/authorize` — the page **does not render any UI**; it 302-redirects back to Codex's loopback callback within milliseconds
    - Codex exchanges the authorization code for a bearer token, stored in its keychain
@@ -90,7 +90,7 @@ Hi is Hirey's people-to-people platform — jobs, hiring, housing, friendship, d
 
 ## Why one OAuth command is enough
 
-Codex registers the MCP server at install time from `./.mcp.json`. The plugin already told Codex where Hi lives (`https://hi.hirey.ai/mcp`) and what scopes it needs. `codex mcp login hi` is the only human-driven step — everything inside it is machine-to-machine: DCR + PKCE + silent /authorize redirect + code exchange + token storage. The Hi server treats the entire flow as agent self-provisioning, exactly the way OpenClaw's `hi_agent_install` tool does.
+Codex registers the MCP server at install time from `./.mcp.json`. The plugin already told Codex where Hi lives (`https://mcp.hirey.ai/mcp`) and what scopes it needs. `codex mcp login hi` is the only human-driven step — everything inside it is machine-to-machine: DCR + PKCE + silent /authorize redirect + code exchange + token storage. The Hi server treats the entire flow as agent self-provisioning, exactly the way OpenClaw's `hi_agent_install` tool does.
 
 ## Naming clarification
 

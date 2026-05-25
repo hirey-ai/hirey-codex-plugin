@@ -2,7 +2,7 @@
 
 Codex plugin that gives Codex first-class access to the Hi people-to-people platform — jobs, hiring, housing, friendship, dating, lawyers, founders, investors, cofounders, any human lead.
 
-**Plugin + Remote MCP + OAuth.** Zero local install. No `npm install`, no Node daemon, no state dir. Every Hi tool call goes from Codex over HTTPS to `https://hi.hirey.ai/mcp`, authenticated with a bearer token that Codex stores in its keychain after a one-time browser OAuth.
+**Plugin + Remote MCP + OAuth.** Zero local install. No `npm install`, no Node daemon, no state dir. Every Hi tool call goes from Codex over HTTPS to `https://mcp.hirey.ai/mcp`, authenticated with a bearer token that Codex stores in its keychain after a one-time browser OAuth. (The legacy URL `https://hi.hirey.ai/mcp` is a permanent alias and continues to work for installs published before the cutover.)
 
 ## Install
 
@@ -36,11 +36,11 @@ Codex initializes its MCP connections exactly once in `McpConnectionManager::new
 
 | Step | What Codex does | What Hi does | What the user sees |
 |---|---|---|---|
-| 1. First `/mcp` call | Sends no Authorization header | 401 + `WWW-Authenticate: Bearer resource_metadata="https://hi.hirey.ai/.well-known/oauth-protected-resource"` | Nothing |
+| 1. First `/mcp` call | Sends no Authorization header | 401 + `WWW-Authenticate: Bearer resource_metadata="https://mcp.hirey.ai/.well-known/oauth-protected-resource"` | Nothing |
 | 2. Discovery | Fetches RFC 9728 metadata, then RFC 8414 AS metadata | Returns JSON with `authorization_endpoint` / `token_endpoint` / `registration_endpoint` | Nothing |
 | 3. DCR | `POST /oauth/register` with loopback `redirect_uris` | Mints `client_id` + (silently) provisions a fresh anonymous Hi subject for this Codex install | Nothing |
 | 4. `/authorize` | Opens browser at `/oauth/authorize?...` | **No HTML rendered.** Issues an auth code bound to the new Hi identity and 302-redirects to Codex's loopback callback | Browser tab opens then closes (~200ms) |
-| 5. Token exchange | `POST /oauth/token` with code + PKCE verifier + RFC 8707 `resource` | Returns access token (RS256 JWT, `aud=https://hi.hirey.ai/mcp`) + rotating refresh token | Nothing |
+| 5. Token exchange | `POST /oauth/token` with code + PKCE verifier + RFC 8707 `resource` | Returns access token (RS256 JWT, `aud=https://mcp.hirey.ai/mcp`) + rotating refresh token | Nothing |
 | 6. Subsequent `/mcp` calls | `Authorization: Bearer <token>` on every request | Verifies signature + `aud` exact-match, resolves the Hi installation by `sub`, dispatches tool | Nothing |
 
 This is the same identity model as OpenClaw: agent self-registers, no human identity is bound. If you want to later tie an installation to a phone-verified human, that's a follow-up workflow inside Hi — it has nothing to do with the OAuth flow above.
@@ -78,7 +78,7 @@ The two paths are sibling adapters over the same Hi public capability catalog. T
 
 ## Backing service
 
-The remote MCP endpoint at `https://hi.hirey.ai/mcp` is served by `hi-mcp-server >= 0.1.24` running in HTTP mode (`HI_MCP_TRANSPORT=http`). Multi-tenant: each Codex installation's OAuth subject resolves to a Hi installation server-side. Tools are loaded dynamically from Hi's public capability catalog (`/v1/capabilities`) so the Codex tool inventory stays in sync with Hi without a plugin re-release.
+The remote MCP endpoint at `https://mcp.hirey.ai/mcp` is served by `hi-mcp-server` running in HTTP mode (`HI_MCP_TRANSPORT=http`). Multi-tenant: each Codex installation's OAuth subject resolves to a Hi installation server-side. Tools are loaded dynamically from Hi's public capability catalog (`/v1/capabilities`) so the Codex tool inventory stays in sync with Hi without a plugin re-release. The legacy alias at `https://hi.hirey.ai/mcp` is preserved for installs whose `.mcp.json` was published before the dedicated subdomain cutover — both URLs share the same OAuth subjects and tokens, audience-validated against either.
 
 ## Local development / staging
 
