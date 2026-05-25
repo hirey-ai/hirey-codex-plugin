@@ -12,13 +12,21 @@ codex plugin marketplace add hirey-ai/hirey-codex-plugin
 codex
 # > /plugins → Hirey marketplace → hirey-hi → Install plugin, then enable it
 
-# 3) Authorize this Codex install against Hi (zero touch — no Hi account)
+# 3) Fully restart Codex — required for the MCP server to actually load
+#    (Codex only spawns MCP servers at session start; plugins enabled
+#    mid-session do NOT load until you relaunch)
+/quit    # or Ctrl-C, then re-run:
+codex
+
+# 4) Authorize this Codex install against Hi (zero touch — no Hi account)
 codex mcp login hi
 ```
 
-Step 3 takes about a second: Codex pops a browser tab that instantly redirects back to a local callback and closes itself. No Hi account, no consent screen, no email/phone — Hi provisions a fresh anonymous agent identity for this Codex install in the background.
+Step 4 takes about a second: Codex pops a browser tab that instantly redirects back to a local callback and closes itself. No Hi account, no consent screen, no email/phone — Hi provisions a fresh anonymous agent identity for this Codex install in the background.
 
 Once logged in, ask Codex anything people-shaped — *"find me 10 backend engineers in Tokyo with JLPT N2+"*, *"reach out to the top three from yesterday"*, *"schedule a 30-min Zoom with Alex next Wednesday"* — and it uses Hi's tools directly.
+
+> **Why the restart?** Codex initializes MCP servers exactly once at session start (`McpConnectionManager::new`) and never re-scans — confirmed upstream in [openai/codex#4955](https://github.com/openai/codex/issues/4955) and [openai/codex#7767](https://github.com/openai/codex/issues/7767), both closed as "not planned." Skip the restart and every `hi_*` tool call returns "no such tool." If after the restart `/plugins` still shows a `Set up in MCP settings` warning next to `hirey-hi`, ignore it — known UI bug ([openai/codex#17360](https://github.com/openai/codex/issues/17360)); verify with `codex mcp list`.
 
 ## What you get
 
@@ -78,7 +86,7 @@ This repo is **automatically mirrored** from the `host-plugins/` directory insid
 Tags on this repo follow `vMAJOR.MINOR.PATCH`. Pin a known-good version:
 
 ```bash
-codex plugin marketplace add hirey-ai/hirey-codex-plugin --ref v0.1.2
+codex plugin marketplace add hirey-ai/hirey-codex-plugin --ref v0.1.3
 ```
 
 The plugin manifest version is independent from `hi-mcp-server` / `hi-platform` versions on Hirey's side — backend changes do not require a plugin release because the tool catalog is fetched dynamically.

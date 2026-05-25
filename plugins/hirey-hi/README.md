@@ -14,13 +14,23 @@ codex plugin marketplace add hirey-ai/hirey-codex-plugin
 codex
 # > /plugins → Hirey marketplace → hirey-hi → Install plugin, then enable it
 
-# 3) Authorize this Codex installation against Hi (zero-touch — see "Auth" below)
+# 3) FULLY RESTART CODEX so the MCP server actually loads
+# Codex only spawns MCP servers once per session (at startup), so a
+# plugin you just enabled does NOT load mid-session — even with /reload.
+# Quit (/quit or Ctrl-C) and relaunch:
+codex
+
+# 4) Authorize this Codex installation against Hi (zero-touch — see "Auth" below)
 codex mcp login hi
 ```
 
-Step 3 takes ~1 second. The browser opens a tab, instantly redirects back to a Codex loopback callback, and closes itself. **There is no Hi account to create, no consent screen to click through, no email/phone to verify** — the Hi server auto-provisions an anonymous agent identity for this Codex install (same model OpenClaw uses).
+Step 4 takes ~1 second. The browser opens a tab, instantly redirects back to a Codex loopback callback, and closes itself. **There is no Hi account to create, no consent screen to click through, no email/phone to verify** — the Hi server auto-provisions an anonymous agent identity for this Codex install (same model OpenClaw uses).
 
-After step 3, send Codex any people-finding request — "find me 10 backend engineers in Tokyo", "help me reach out to candidates from yesterday", "schedule a Zoom with Alex" — and it will use Hi's tools directly.
+After step 4, send Codex any people-finding request — "find me 10 backend engineers in Tokyo", "help me reach out to candidates from yesterday", "schedule a Zoom with Alex" — and it will use Hi's tools directly.
+
+### Why step 3 is mandatory
+
+Codex initializes its MCP connections exactly once in `McpConnectionManager::new` at session start and never revisits them. A plugin you enable mid-session is registered in config but its MCP server will not be spawned until your **next** session. This is upstream Codex behavior, not a Hi quirk — see [openai/codex#4955](https://github.com/openai/codex/issues/4955) and [openai/codex#7767](https://github.com/openai/codex/issues/7767) (closed as "not planned"). If you skip the restart, every `hi_*` tool call will fail with "no such tool."
 
 ## Auth (zero-touch OAuth)
 
@@ -100,6 +110,17 @@ export HI_DEV_TOKEN=<a token minted from gateway /oauth/token client_credentials
 ```
 
 Never use bearer-token mode in production — it is the OpenClaw-path auth model and bypasses Hi's per-user installation binding.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Codex says `no such tool: hi_agent_status` (or any other `hi_*` tool) | The `hirey-hi` MCP server didn't load into this Codex session. Almost always: you enabled the plugin in `/plugins` but didn't restart Codex afterwards. | Quit Codex fully (`/quit`, `Ctrl-C`, or close the window) and relaunch. The MCP only spawns at session start ([openai/codex#4955](https://github.com/openai/codex/issues/4955) — not planned). |
+| `/plugins` shows `hirey-hi` enabled but with a `Set up in MCP settings` warning | Known Codex UI bug — the plugin page does not reconcile against the runtime MCP registry, so it always shows the manual-setup prompt even when the MCP is already loaded ([openai/codex#17360](https://github.com/openai/codex/issues/17360)). | Ignore the UI warning. Run `codex mcp list` in a shell — if `hi` shows up with `Auth: OAuth`, you're fine. |
+| `hi_*` tool returns `401` / `oauth_required` / `agent_not_registered` | The MCP **is** loaded but you haven't run OAuth (or your token expired and refresh failed). | Run `codex mcp login hi`. If that fails repeatedly, check that loopback ports 1455–1465 aren't blocked by a firewall or proxy. |
+| `codex mcp login hi` opens a browser that does NOT redirect+close (it shows a real consent screen, login form, or Hi error page) | Something broke the zero-touch DCR + silent `/authorize` flow — usually wrong `auth.hi.hirey.ai` discovery or a proxy intercepting the redirect. | Surface the rendered page contents (it'll quote a Hi error code) to support@hirey.com. Do NOT paste tokens manually — there's no manual path on Codex. |
+| Tools work but `hi_agent_doctor` fails on the events leg | OAuth scope was issued without `hi.events`, or the AS DB lost the refresh token. | Re-run `codex mcp login hi` and accept whatever the AS returns (it will request the full scope set declared in `.mcp.json`). |
+| `codex plugin marketplace add hirey-ai/hirey-codex-plugin` fails with "marketplace not found" | Codex < 0.30 doesn't have plugin support. | Upgrade Codex CLI (`npm i -g @openai/codex@latest`). The plugin manifest pins `compat.codex: ">=0.30"`. |
 
 ## Versioning
 

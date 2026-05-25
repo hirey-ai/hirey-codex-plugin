@@ -1,6 +1,6 @@
 ---
 name: hi-onboard
-description: First-time setup for Hirey Hi inside Codex. Use whenever `hi_agent_status` reports `connected:false`, any `hi_*` tool returns an auth or `agent_not_registered` error, or the user explicitly asks to "set up", "log in to", "connect", "activate", or "install" Hi. CRITICAL — this plugin is Codex's remote-MCP path; never tell the user to `npm install`, never ask for a client_id / client_secret / API token, never run a local `hi-mcp-server`. Authorization is fully automated through `codex mcp login hi` — no consent screen, no Hi account, no human form to fill in. The browser tab opens, instantly redirects, and closes; total user touch is one terminal keypress.
+description: First-time setup for Hirey Hi inside Codex. Use whenever `hi_agent_status` is missing from the tool inventory, reports `connected:false`, any `hi_*` tool returns an auth or `agent_not_registered` error, or the user explicitly asks to "set up", "log in to", "connect", "activate", or "install" Hi. CRITICAL — this plugin is Codex's remote-MCP path; never tell the user to `npm install`, never ask for a client_id / client_secret / API token, never run a local `hi-mcp-server`. Authorization is fully automated through `codex mcp login hi` — no consent screen, no Hi account, no human form to fill in. The browser tab opens, instantly redirects, and closes; total user touch is one terminal keypress. Separately: Codex only spawns MCP servers at session start, so a freshly enabled `hirey-hi` plugin will NOT load mid-session — the user must fully quit and relaunch Codex before any `hi_*` tool becomes available. Do not tell the user to "send another message and retry"; tell them to restart Codex.
 ---
 
 # Hi Onboard (first-time setup, Codex remote-MCP)
@@ -21,7 +21,18 @@ Hi is Hirey's people-to-people platform — jobs, hiring, housing, friendship, d
 
 ## Steps
 
-1. Check inventory first. If `hi_agent_status` is not in your current tool inventory, the plugin's MCP server has not loaded yet. Tell the user: "Open `/plugins` and confirm `hirey-hi` is enabled (or run `codex plugin marketplace add hirey-ai/hirey-codex-plugin` if the plugin isn't installed at all), then send another message — Codex doesn't refresh my tool list mid-turn." Do not improvise.
+1. **Check inventory first.** If `hi_agent_status` is NOT in your current tool inventory, the `hirey-hi` MCP server has not loaded into this Codex session. **This is not fixable mid-session** — Codex spawns MCP servers exactly once in `McpConnectionManager::new` at startup and never re-scans (openai/codex#4955, #7767 — marked "not planned"). Telling the user to "try again" or "send another message" will fail every time.
+
+   Tell the user (paraphrase into their chat language, but keep both substeps):
+
+   > "Hi's MCP isn't loaded into this Codex session yet. Two things:
+   >
+   > 1. **Confirm the plugin is enabled.** Inside Codex, run `/plugins` → Hirey marketplace → `hirey-hi` → install + enable. If the marketplace isn't even listed, run `codex plugin marketplace add hirey-ai/hirey-codex-plugin` from your shell first, then enable inside `/plugins`.
+   > 2. **Fully restart Codex.** Codex only loads MCP servers at session start, so a plugin you just enabled does NOT load mid-session. Quit Codex (`/quit`, `Ctrl-C`, or close the window), relaunch `codex`, then ask me again.
+   >
+   > If after the restart `/plugins` still shows `hirey-hi` with a `Set up in MCP settings` warning, ignore that — it's a known Codex UI bug ([openai/codex#17360](https://github.com/openai/codex/issues/17360)) where the plugin page mis-reports a runtime-registered MCP as needing manual setup. Verify with `codex mcp list` in a separate shell; `hi` should appear with `Auth: OAuth`."
+
+   Do not retry tool calls "to check if it shows up." It won't.
 
 2. Call `hi_agent_status`. Possible outcomes:
    - `connected:true` + `activated:true` → already onboarded, switch to `hi-use`
@@ -59,9 +70,12 @@ Hi is Hirey's people-to-people platform — jobs, hiring, housing, friendship, d
 ## Anti-patterns
 
 - ❌ Pretending the user is already connected. Every false claim breaks at the next tool call.
+- ❌ Telling the user to "send another message" or "retry in this session" when `hi_agent_status` is missing from the inventory. Codex never re-scans MCP servers mid-session — the user MUST fully quit and relaunch Codex (openai/codex#4955, #7767, #17360). A retry will be silently identical.
+- ❌ Treating Codex's `Set up in MCP settings` UI warning on the `/plugins` page as a real problem after a restart. It is a known Codex UI bug (openai/codex#17360); the MCP is actually registered. Verify via `codex mcp list`.
 - ❌ Skipping the doctor probe "because status was green". Status is local belief; doctor proves the round-trip.
 - ❌ Telling the user to copy a token from a webpage. OAuth is browser-mediated and the token lands in Codex's keychain — the user never sees or pastes it.
 - ❌ Retrying `codex mcp login hi` automatically. If it failed, surface the real error (network, OAuth callback port, denied scope) and let the user decide.
+- ❌ Confusing "MCP not loaded" with "OAuth not done." If the tools are missing entirely, the fix is a Codex **restart**, not `codex mcp login hi`. If the tools exist but return 401/`oauth_required`, the fix is `codex mcp login hi`. Don't mix the two diagnoses.
 
 ## Why one OAuth command is enough
 

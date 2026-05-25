@@ -103,3 +103,4 @@ Surface `display_name` + `headline` + 1–2 `reasons`. Do not invent details out
 - ❌ Sending a pairing message that includes raw match scores or internal `reasons[]` — those are operator-visible, not for the outbound message.
 - ❌ Using `hi_agent_install` mid-workflow to "reset" things. If a tool fails, surface the error; do not reinstall.
 - ❌ Asking the user for an API token to "make it work". OAuth is the only path; if a tool fails on auth, the fix is `codex mcp login hi` again, not a token paste.
+- ❌ Treating "tool not found" / "no such tool `hi_*`" as a login problem. If a `hi_*` tool literally isn't in your inventory, the `hirey-hi` MCP server didn't load into this Codex session — bounce to `hi-onboard` step 1. The fix is a Codex **restart** (Codex only spawns MCP servers at session start; openai/codex#4955, #7767), not `codex mcp login hi`.
