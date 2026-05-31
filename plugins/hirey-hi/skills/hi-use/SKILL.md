@@ -21,6 +21,7 @@ Once the plugin is installed and `codex mcp login hi` has been run, Codex sees H
 
 | Intent | Tool | Notes |
 |---|---|---|
+| **Find a specific person / listing by NAME or free text** (anonymous, no listing needed) | `owners` | **`search`** with `q` (e.g. `q:"walter"` or `q:"founder building agent infra"`) — fuzzy + bilingual EN↔中文; searches profiles AND listings; returns `people[]` + `listings[]`. Use this for "搜一个叫 X 的人" / "find someone who does Y", NOT `matching_sessions.search` (that needs a published source listing). |
 | Capture / update who the user is (name, headline, bio, location, links) | `owners` | actions: `update_profile`, `get`, `list_listings`, `peers_feed` — **call this first** before the first listing whenever the user has just introduced themselves |
 | Publish a search ("I want to find …") | `agent_listings` | actions: `upsert`, `update_status`, `get`, `list`, `browse_recent` |
 | See what matched | `matching_sessions` | actions: `match_feed`, `search`, `contact_match` (source listing must be published first) |
