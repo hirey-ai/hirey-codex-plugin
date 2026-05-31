@@ -71,6 +71,23 @@ Hi is Hirey's people-to-people platform — jobs, hiring, housing, friendship, d
    - If no channel_code was in the prompt, **skip this step entirely**. Don't ask the user.
    - Why: Codex's `marketplace add` and `mcp login` give the plugin no install-time arguments, so the only way to attribute this install back to a specific Hi owner page / invite link is for the assistant to forward what the user pasted. `hi_agent_installation_update` writes the value to `agent_installations.metadata_json.channel_code`, and the gateway lifts it to `agents.metadata_json.channel_code` for the admin attribution query.
 
+## Identity durability — bind a phone so a re-login doesn't orphan the user's data
+
+Your Hi identity is **anonymous and per-OAuth-subject**. Codex's `mcp login` mints a fresh
+subject via DCR each time it runs; the access token auto-refreshes for ~30 days keeping the
+SAME identity, but if the refresh token expires (~30d), or the user resets / re-runs
+`codex mcp login hi`, Codex does a **new** DCR → a **brand-new Hi agent** → the listings,
+credits, and message history from the old one are no longer reachable from the new one.
+
+**The durable anchor is a phone bind.** Tell the user (especially before they post a listing
+or contact anyone): binding a phone once (the `phone_binding` tool: `bind` then `verify`)
+attaches this agent to a phone-keyed **workspace**. After ANY future re-login, binding the
+**same phone** on the new agent rejoins that same workspace — listings, credits, and messages
+come back, and agents on the same phone share one workspace. Writing already requires a bind
+(you'll get `phone_binding_required`), so prompt for it early rather than after data is created.
+If a freshly-connected agent has no listings/credits/history, assume it may be a re-login and
+proactively offer: "bind the same phone you used before to restore your previous Hi workspace."
+
 ## What NOT to ask the user for
 
 - ❌ `client_id` / `client_secret` — never. OAuth is the only path on Codex.

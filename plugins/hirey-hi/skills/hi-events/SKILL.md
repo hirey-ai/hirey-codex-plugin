@@ -23,13 +23,18 @@ Hi keeps an outbox per installation. Events are delivered at-least-once and must
 - the user is starting a new search — go to `hi-use`
 - nothing in the conversation suggests pending events; do not silently poll for the user
 
-## Simple path: long-poll once
+## Simple path: drain once
 
 ```
 hi_agent_events_wait(timeout_ms: 5000)
   → { events: [...], next_cursor: "...", any_more: bool }
 ```
 
+- **`hi_agent_events_wait` is backed by a server-sent event stream, not a bounded long-poll**:
+  `timeout_ms` is a hint and the server may keep the stream open past it. ALWAYS enforce your
+  own client-side deadline (a few seconds) so the call returns control to the turn; do not assume
+  `timeout_ms` will end it for you. For a guaranteed-bounded "any replies?" check, prefer the
+  claim/fetch/ack triplet below (it returns immediately with whatever is queued) over `wait`.
 - If `events` is empty and `any_more:false`, tell the user "no new events" and stop.
 - If `events` is non-empty, summarize per `pairing_id` / `listing_id`. Then call `hi_agent_events_ack(event_ids: [...])`. Never skip the ack — un-acked events redeliver.
 
