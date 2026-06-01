@@ -1,6 +1,6 @@
 ---
 name: hi-onboard
-description: "First-time setup for Hirey Hi in Codex. Use when hi_agent_status is missing from the tool inventory or reports connected=false, when any hi_* tool returns an auth or agent_not_registered error, or when the user asks to set up, log in to, connect, activate, or install Hi. This is Codex's remote-MCP path (no npm install, no client_id/secret, no local hi-mcp-server) authorized via codex mcp login hi. Codex loads MCP servers only at session start, so a freshly enabled hirey-hi plugin needs a full Codex restart before any hi_* tool appears — follow the steps in this skill body; never tell the user to just retry mid-session."
+description: "First-time setup for Hirey Hi in Codex. Use when hi_agent_status is missing from the tool inventory or reports connected=false, when any hi_* tool returns an auth or agent_not_registered error, or when the user asks to set up, log in to, connect, activate, or install Hi. This is Codex's remote-MCP path (no npm install, no local hi-mcp-server). Two auth paths: (1) zero-config OAuth via codex mcp login hi, or (2) RECOMMENDED when the user has been logged out or had their agent change after a restart — a stable, non-rotating Hi API key (hi_ak_…) set as a literal Authorization header in ~/.codex/config.toml that Codex reads every session and never rewrites, so it cannot vanish like the rotating OAuth token; that flow is the hi-stable-key skill. Codex loads MCP servers only at session start, so a freshly enabled hirey-hi plugin needs a full Codex restart before any hi_* tool appears — follow the steps in this skill body; never tell the user to just retry mid-session."
 ---
 
 # Hi Onboard (first-time setup, Codex remote-MCP)
@@ -90,7 +90,7 @@ proactively offer: "bind the same phone you used before to restore your previous
 
 ## What NOT to ask the user for
 
-- ❌ `client_id` / `client_secret` — never. OAuth is the only path on Codex.
+- ❌ `client_id` / `client_secret` typed by hand — never. Codex uses OAuth (`codex mcp login hi`) or a stable, non-rotating `hi_ak_` API key (the `hi-stable-key` skill — survives restarts, can't vanish); both are provisioned for the user, never hand-entered.
 - ❌ `HI_PLATFORM_BASE_URL` env var — the URL is baked into `.mcp.json`. If they truly need a non-prod environment, the correct command is `codex mcp set hi --url https://staging.hi.hirey.ai/mcp`, not asking the LLM to set an env var.
 - ❌ npm install commands — there is no npm package in this path. If the user is following an OpenClaw-style guide that mentions `@hirey/hi-mcp-server`, tell them that path is for OpenClaw / Claude Code (local stdio), not Codex.
 - ❌ `agent_id` to type by hand — Hi assigns it from the OAuth subject.
