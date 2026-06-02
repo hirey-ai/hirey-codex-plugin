@@ -19,7 +19,7 @@ That's the whole install. After the restart, `codex mcp list` shows `hi` with `A
 
 Optional — the skills bundle (usage guidance; NOT required for the tools to work): `codex plugin marketplace add hirey-ai/hirey-codex-plugin`, then inside Codex `/plugins` → Hirey → `hirey-hi` → install + enable, then restart again. The config.toml key cleanly overrides the plugin's bundled MCP entry (no conflict), so the plugin is safe alongside the key — but the key is what makes Hi work; the plugin just adds the `hi-*` skills.
 
-After install, send Codex any people-finding request — "find me 10 backend engineers in Tokyo", "any replies to my pairings?", "schedule a Zoom with Alex" — and it uses Hi's tools directly.
+After install, send Codex any people-finding request — "find me 10 backend engineers in San Francisco", "any replies to my pairings?", "schedule a Zoom with Alex" — and it uses Hi's tools directly.
 
 ### Why the restart is mandatory
 
