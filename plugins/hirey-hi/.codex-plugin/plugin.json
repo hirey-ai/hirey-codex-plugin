@@ -1,6 +1,6 @@
 {
   "name": "hirey-hi",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Hirey Hi for Codex — find people for jobs, hiring, housing, friendship, dating, founders, investors, lawyers, and any other human-lead goal. Zero local install: ships skills + a remote MCP connection to Hi cloud, authenticated by default with a stable hi_ak_ key in ~/.codex/config.toml (browser OAuth is a fallback).",
   "homepage": "https://hi.hirey.ai",
   "license": "UNLICENSED",
@@ -19,7 +19,7 @@
     "defaultPrompt": [
       "Hi is Hirey's people-to-people platform for jobs or candidates, landlords or tenants, friends, dates or marriage partners, lawyers, founders, investors, cofounders, and any other human leads.",
       "If `hi_agent_status` is in the tool inventory and reports `connected:true` + `activated:true`, you are ready to use Hi — go straight to the `hi-use` skill.",
-      "If `hi_agent_status` is NOT in the tool inventory at all (the tool itself is missing, not just returning an error), the `hirey-hi` MCP server did not load into this Codex session. Codex spawns MCP servers exactly once at session start (`McpConnectionManager::new`) and never re-scans (openai/codex#4955, #7767 — closed 'not planned'). Bounce to the `hi-onboard` skill; the user must fully quit and relaunch Codex. Do not tell them to 'send another message' or 'retry' — that cannot work mid-session.",
+      "If the `hi_*` tools are NOT in your inventory, OR `hi_agent_status` shows connected:false / Auth: Unsupported, OR a call returns missing_bearer / 401: you almost certainly have NO key configured yet — a restart ALONE will not load the tools (the server rejects an unauthenticated connect). Bounce to the `hi-onboard` skill: run `curl -fsSL https://hi.hirey.ai/v1/install/codex.sh | bash` (writes a hi_ak_ key to ~/.codex/config.toml), THEN fully quit and relaunch Codex (Codex loads MCP servers only at session start and never re-scans — openai/codex#4955, #7767). Never probe the MCP with raw curl, never run `codex mcp login` to 'fix' it, and never tell the user to 'retry'/'send another message' in-session.",
       "If `hi_agent_status` reports not connected, or any `hi_*` tool returns an auth error, follow the `hi-onboard` skill: by DEFAULT it sets up a stable `hi_ak_` key in `~/.codex/config.toml` (no browser, no OAuth, no orphan agent); `codex mcp login hi` is only the documented fallback.",
       "Two supported auth paths: (1) DEFAULT — a stable, non-rotating Hi API key (hi_ak_…) set as a literal Authorization header in ~/.codex/config.toml: written once, never rewritten, survives restarts, mints NO orphan agent (use the `hi-stable-key` skill, or run `curl -fsSL https://hi.hirey.ai/v1/install/codex.sh | bash`); and (2) FALLBACK — zero-config OAuth via `codex mcp login hi` (its token rotates and can vanish on a crashed refresh/reinstall, re-logging onto a fresh orphan agent). Prefer the key. Never ask the user to hand-type a client_id/client_secret or run a local hi-mcp-server; both paths are pure remote MCP and provisioned for them.",
       "Business tools (agent_listings, matching_sessions, pairings, thread_meetings, calendar, listing_taxonomy, …) are loaded dynamically from Hi's public capability catalog. Their names and schemas are authoritative; never invent a tool that is not in the live inventory.",

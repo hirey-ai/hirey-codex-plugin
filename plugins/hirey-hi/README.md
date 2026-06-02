@@ -7,32 +7,23 @@ Codex plugin that gives Codex first-class access to the Hi people-to-people plat
 ## Install
 
 ```bash
-# 1) Register the Hirey marketplace (one-time; Codex git-clones this repo)
-codex plugin marketplace add hirey-ai/hirey-codex-plugin
-
-# 2) Install and enable the plugin inside a codex session
-codex
-# > /plugins → Hirey marketplace → hirey-hi → Install plugin, then enable it
-
-# 3) Authenticate with a stable key — DEFAULT, no browser, no OAuth.
-#    Mint an anonymous key + append the returned [mcp_servers.hi] block
-#    (url + Authorization: Bearer hi_ak_...) to ~/.codex/config.toml:
+# 1) Mint a stable hi_ak_ key + append the [mcp_servers.hi] block to ~/.codex/config.toml.
+#    Anonymous — no account, no browser, no OAuth, no orphan agent. Idempotent (safe to re-run).
 curl -fsSL https://hi.hirey.ai/v1/install/codex.sh | bash
-#    DO NOT run `codex mcp login hi` — that is the OAuth fallback only (see "Auth").
-#    The config.toml key cleanly overrides the plugin's bundled MCP entry (no conflict).
 
-# 4) FULLY RESTART CODEX (quit + relaunch) so the MCP server + hi_* tools load.
-#    Codex spawns MCP servers once per session, at startup.
+# 2) FULLY RESTART CODEX (quit + relaunch) so the hi MCP server + hi_* tools load.
 codex
 ```
 
-After the restart, reading and searching work immediately; your anonymous Hi agent is created on the first write (or phone/email bind) — **no account to create up front, no consent screen, no email/phone needed to start.**
+That's the whole install. After the restart, `codex mcp list` shows `hi` with `Auth: Bearer token`, reading/searching work immediately, and your anonymous Hi agent is created on your first write (or phone/email bind) — no account up front, no consent screen, no email/phone needed to start. **Do NOT run `codex mcp login hi`** — that's the OAuth fallback only; the key is your auth.
 
-After step 4, send Codex any people-finding request — "find me 10 backend engineers in Tokyo", "help me reach out to candidates from yesterday", "schedule a Zoom with Alex" — and it will use Hi's tools directly.
+Optional — the skills bundle (usage guidance; NOT required for the tools to work): `codex plugin marketplace add hirey-ai/hirey-codex-plugin`, then inside Codex `/plugins` → Hirey → `hirey-hi` → install + enable, then restart again. The config.toml key cleanly overrides the plugin's bundled MCP entry (no conflict), so the plugin is safe alongside the key — but the key is what makes Hi work; the plugin just adds the `hi-*` skills.
 
-### Why step 3 is mandatory
+After install, send Codex any people-finding request — "find me 10 backend engineers in Tokyo", "any replies to my pairings?", "schedule a Zoom with Alex" — and it uses Hi's tools directly.
 
-Codex initializes its MCP connections exactly once in `McpConnectionManager::new` at session start and never revisits them. A plugin you enable mid-session is registered in config but its MCP server will not be spawned until your **next** session. This is upstream Codex behavior, not a Hi quirk — see [openai/codex#4955](https://github.com/openai/codex/issues/4955) and [openai/codex#7767](https://github.com/openai/codex/issues/7767) (closed as "not planned"). If you skip the restart, every `hi_*` tool call will fail with "no such tool."
+### Why the restart is mandatory
+
+Codex initializes its MCP connections exactly once in `McpConnectionManager::new` at session start and never revisits them. A server you just added (the `[mcp_servers.hi]` key block, or a plugin you enabled) is registered in config but will not be spawned until your **next** session. This is upstream Codex behavior, not a Hi quirk — see [openai/codex#4955](https://github.com/openai/codex/issues/4955) and [openai/codex#7767](https://github.com/openai/codex/issues/7767) (closed as "not planned"). If you skip the restart, every `hi_*` tool call will fail with "no such tool."
 
 ## Auth — stable key (default) or browser OAuth (fallback)
 
