@@ -5,7 +5,7 @@ description: Use Hirey Hi inside Codex for people-to-people work — post listin
 
 # Hi Use (post-onboarding workflows, Codex)
 
-Once the plugin is installed and `codex mcp login hi` has been run, Codex sees Hi as a first-class tool surface. Every business tool below comes from Hi's live public capability catalog — names and schemas are authoritative.
+Once Hi is connected (the default setup writes a stable `hi_ak_` key into `~/.codex/config.toml` via `curl -fsSL https://hi.hirey.ai/v1/install/codex.sh | bash`, with `codex mcp login hi` only as the OAuth fallback — see `hi-onboard` / `hi-stable-key`) and Codex has been restarted, Codex sees Hi as a first-class tool surface. Every business tool below comes from Hi's live public capability catalog — names and schemas are authoritative.
 
 ## Use when
 
@@ -98,5 +98,5 @@ If the user has finished onboarding and asks anything along the lines of "show m
 - ❌ Inventing match cards / candidates the model "thinks would fit". Only surface what Hi returned.
 - ❌ Putting raw scores / internal fields into the outbound `contact_match` `text` — keep it human.
 - ❌ Using `hi_agent_install` mid-workflow to "reset" things. If a tool fails, surface the error; do not reinstall.
-- ❌ Asking the user for an API token to "make it work". OAuth is the only path; if a tool fails on auth, the fix is `codex mcp login hi` again, not a token paste.
+- ❌ Asking the user to paste a random API token to "make it work". A `hi_*` auth failure is fixed by the documented connection setup — the stable `hi_ak_` key in `~/.codex/config.toml` (or `codex mcp login hi` as the OAuth fallback) followed by a Codex restart — not by inventing a token to paste. See `hi-onboard` / `hi-stable-key`.
 - ❌ Treating "tool not found" / "no such tool `hi_*`" as a login problem. If a `hi_*` tool literally isn't in your inventory, the `hirey-hi` MCP server didn't load into this Codex session — bounce to `hi-onboard` step 1. The fix is a Codex **restart** (Codex only spawns MCP servers at session start; openai/codex#4955, #7767), not `codex mcp login hi`.
