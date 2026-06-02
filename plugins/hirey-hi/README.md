@@ -2,7 +2,7 @@
 
 Codex plugin that gives Codex first-class access to the Hi people-to-people platform — jobs, hiring, housing, friendship, dating, lawyers, founders, investors, cofounders, any human lead.
 
-**Plugin + Remote MCP + OAuth.** Zero local install. No `npm install`, no Node daemon, no state dir. Every Hi tool call goes from Codex over HTTPS to `https://mcp.hirey.ai/mcp`, authenticated with a bearer token that Codex stores in its keychain after a one-time browser OAuth. (The legacy URL `https://hi.hirey.ai/mcp` is a permanent alias and continues to work for installs published before the cutover.)
+**Plugin + Remote MCP + a stable API key (OAuth is only a fallback).** Zero local install. No `npm install`, no Node daemon, no state dir. Every Hi tool call goes from Codex over HTTPS to `https://mcp.hirey.ai/mcp`. DEFAULT auth is a stable, non-rotating `hi_ak_…` key written once to `~/.codex/config.toml` — no browser, no `codex mcp login`, survives restarts, mints NO orphan agent. (Browser OAuth still works as a documented fallback — see "Auth" below. The legacy URL `https://hi.hirey.ai/mcp` is a permanent alias for installs published before the cutover.)
 
 ## Install
 
@@ -14,17 +14,19 @@ codex plugin marketplace add hirey-ai/hirey-codex-plugin
 codex
 # > /plugins → Hirey marketplace → hirey-hi → Install plugin, then enable it
 
-# 3) FULLY RESTART CODEX so the MCP server actually loads
-# Codex only spawns MCP servers once per session (at startup), so a
-# plugin you just enabled does NOT load mid-session — even with /reload.
-# Quit (/quit or Ctrl-C) and relaunch:
-codex
+# 3) Authenticate with a stable key — DEFAULT, no browser, no OAuth.
+#    Mint an anonymous key + append the returned [mcp_servers.hi] block
+#    (url + Authorization: Bearer hi_ak_...) to ~/.codex/config.toml:
+curl -fsSL https://hi.hirey.ai/v1/install/codex.sh | bash
+#    DO NOT run `codex mcp login hi` — that is the OAuth fallback only (see "Auth").
+#    The config.toml key cleanly overrides the plugin's bundled MCP entry (no conflict).
 
-# 4) Authorize this Codex installation against Hi (zero-touch — see "Auth" below)
-codex mcp login hi
+# 4) FULLY RESTART CODEX (quit + relaunch) so the MCP server + hi_* tools load.
+#    Codex spawns MCP servers once per session, at startup.
+codex
 ```
 
-Step 4 takes ~1 second. The browser opens a tab, instantly redirects back to a Codex loopback callback, and closes itself. **There is no Hi account to create, no consent screen to click through, no email/phone to verify** — the Hi server auto-provisions an anonymous agent identity for this Codex install (same model OpenClaw uses).
+After the restart, reading and searching work immediately; your anonymous Hi agent is created on the first write (or phone/email bind) — **no account to create up front, no consent screen, no email/phone needed to start.**
 
 After step 4, send Codex any people-finding request — "find me 10 backend engineers in Tokyo", "help me reach out to candidates from yesterday", "schedule a Zoom with Alex" — and it will use Hi's tools directly.
 
@@ -32,7 +34,9 @@ After step 4, send Codex any people-finding request — "find me 10 backend engi
 
 Codex initializes its MCP connections exactly once in `McpConnectionManager::new` at session start and never revisits them. A plugin you enable mid-session is registered in config but its MCP server will not be spawned until your **next** session. This is upstream Codex behavior, not a Hi quirk — see [openai/codex#4955](https://github.com/openai/codex/issues/4955) and [openai/codex#7767](https://github.com/openai/codex/issues/7767) (closed as "not planned"). If you skip the restart, every `hi_*` tool call will fail with "no such tool."
 
-## Auth (zero-touch OAuth)
+## Auth — stable key (default) or browser OAuth (fallback)
+
+DEFAULT is the stable `hi_ak_…` key from step 3 (no browser, can't vanish, mints no orphan agent). The table below is the **OAuth fallback** — what Codex does automatically on the first `/mcp` call *only if you did not install a key*:
 
 | Step | What Codex does | What Hi does | What the user sees |
 |---|---|---|---|
