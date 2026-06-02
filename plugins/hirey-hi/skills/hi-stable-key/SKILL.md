@@ -23,7 +23,7 @@ Use this when the user wants a Hi connection that survives crashes/restarts with
    ```bash
    curl -s -X POST https://hi.hirey.ai/v1/agents/api-keys \
      -H 'content-type: application/json' \
-     -d '{"display_name":"Codex (my Mac)"}'
+     -d '{"display_name":"Codex (my Mac)","anonymous":true}'
    ```
 
    The response contains `api_key` (starts with `hi_ak_`) and `setup.codex_config_toml` (a ready TOML block). Treat the key like a password.
@@ -46,7 +46,7 @@ Use this when the user wants a Hi connection that survives crashes/restarts with
 
 4. **Verify.** Call `hi_agent_status`. Expect `connected:true`. The key is now Codex's credential and will not vanish on crashes/restarts (it is never rewritten).
 
-5. **Claim your identity (so Codex is YOUR agent, not a fresh empty one).** The freshly minted key starts as a new anonymous agent. To make Codex act as the user's real Hi identity (their listings, threads, inbound replies):
+5. **Bind your identity (this is what CREATES your agent).** The key starts with NO agent at all — reads work anonymously and nothing is created server-side until you bind. Binding (or your first write) creates your agent and joins it to the workspace for that phone/email — same key, no second restart. To do it:
    - **Existing Hi user** (already has Hi on another device — Claude Code / OpenClaw / phone): on that device call `hi_agent_claim_export` to get a one-time claim token, then in Codex call `hi_agent_claim_redeem` with it. Codex's installation re-points to the existing agent — same identity, nothing lost.
    - **New user**: call `phone_binding` and complete the SMS code. This binds the agent to the user's phone number; that phone number is the durable identity anchor — even if the key is ever rotated, re-binding the same phone recovers the same workspace.
 
