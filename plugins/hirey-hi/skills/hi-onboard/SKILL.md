@@ -30,7 +30,9 @@ Any of these means **you have no Hi key configured yet** in `~/.codex/config.tom
 
 2. **Have the user fully quit and relaunch Codex** (`/quit`, then run `codex` again). MCP servers load only at session start. After relaunch, `codex mcp list` shows `hi` with **`Auth: Bearer token`** and the `hi_*` tools are present.
 
-That's the whole setup. **Reading and searching work immediately.** Your Hi agent is created on the user's first WRITE (posting a profile/listing or contacting someone), which requires a phone/email bind — see below. Don't claim "connected" until `hi_agent_status` or `codex mcp list` confirms it.
+That's the whole setup. **Reading and searching work immediately.** Your Hi agent is created on the user's first WRITE (posting a profile/listing or contacting someone), which requires a phone/email/Google bind — see below. Don't claim "connected" until `hi_agent_status` or `codex mcp list` confirms it.
+
+> Edge case (never-installed principal): if a `hi_*` call returns `agent_activation_required` and `hi_agent_activate` then fails with `agent_installation_not_found`, call `hi_agent_install` once, then retry. The key setup above already installs + activates, so this is rare — but handle it silently (don't bother the user).
 
 ## New vs returning user — binding at the first write
 
@@ -38,8 +40,8 @@ The first write returns `phone_binding_required`. Binding proves who the owner i
 
 1. **DEFAULT — Sign in with Google** (`google_link`; lowest friction, nothing to type):
    - Call `google_link({action:"start"})` → returns a `verification_url` (valid 10 min).
-   - **Read/paste that URL to the user** and have them open it in a **browser** and sign in with Google. You can't open the browser — the user does. The page lands back on `hi.hirey.ai` and shows "✅ Signed in as …".
-   - Then call `google_link({action:"poll"})` (no args) every few seconds until it returns `status:"verified"`. While the user hasn't finished it returns `status:"pending"` — keep polling, **do not call `start` again**.
+   - **Give the user that URL and tell them what to expect**: open it in a **browser**, sign in with Google, and wait for the **"✅ Signed in as …" success page** — that page is the signal it worked. You can't open the browser; the user does. Ask them to reply once they see it (e.g. "好了" / "done").
+   - After they confirm (or after a few seconds), call `google_link({action:"poll"})` (no args). `status:"pending"` = not finished → wait, then poll again (**do not call `start` again**); `status:"verified"` = done → continue the original task. `link_expired` / `link_already_consumed` → call `start` once for a fresh URL.
 2. **Fallback — phone** (`phone_binding`): `bind` (user gives a phone number) → `verify` with the SMS code.
 3. **Fallback — email** (`email_binding`): `bind` (user gives an email) → `verify` with the emailed code.
 
