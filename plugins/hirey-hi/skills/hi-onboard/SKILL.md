@@ -39,20 +39,21 @@ Hi is Hirey's people-to-people platform — jobs, hiring, housing, friendship, d
    - `connected:false` or `oauth_required:true` → continue with step 3
    - any other error → surface the real error verbatim; do not retry blindly
 
-3. Ask the user to run **one** command in their terminal:
+3. **Set up the connection — DEFAULT is a stable API key** (recommended: no browser, no OAuth, can't vanish, mints NO orphan agent). Use the `hi-stable-key` skill, or inline:
 
    ```bash
-   codex mcp login hi
+   # Anonymous, non-rotating key. Creates NO Hi agent until the user's first write/bind.
+   curl -s -X POST https://hi.hirey.ai/v1/agents/api-keys \
+     -H 'content-type: application/json' -d '{"display_name":"Codex","anonymous":true}'
    ```
 
-   This triggers Codex's automated OAuth flow:
-   - Codex discovers Hi's authorization server via `https://mcp.hirey.ai/.well-known/oauth-protected-resource` (or `https://hi.hirey.ai/.well-known/oauth-protected-resource` for legacy installs — same metadata, different host)
-   - Codex DCR-registers itself at `/oauth/register`, which **also auto-provisions a fresh anonymous Hi agent identity** behind the scenes (no Hi account, no signup)
-   - Codex opens a browser at `/oauth/authorize` — the page **does not render any UI**; it 302-redirects back to Codex's loopback callback within milliseconds
-   - Codex exchanges the authorization code for a bearer token, stored in its keychain
-   - The browser tab closes on its own
+   Append the returned `setup.codex_config_toml` (a literal `[mcp_servers.hi]` + `Authorization: Bearer hi_ak_…` header) to `~/.codex/config.toml`, then **fully quit and relaunch Codex** (MCP loads only at startup). Reading/searching work immediately; the agent is created at the user's first write or phone/email bind — same key, no second restart.
 
-   **End-user touch is exactly one terminal keypress.** No Hi account, no consent click, no copy-paste. If the user reports that the browser opened a Hi login form, something is broken — surface that as `unexpected_consent_screen` and stop.
+   **New vs returning user** (decide at the first write):
+   - **New to Hi:** bind a phone/email at the first write — that creates the agent + workspace.
+   - **Returning (used Hi before on another device/host):** bind the **same** phone/email — it rejoins the existing workspace (listings, credits, messages come back). Then call `owners(action="list_agents")` to show the user's existing devices/agents (`{agent_id, device_label, status, last_seen, is_self}`). Either continue as this device (old data already shows — it fans out by workspace), or **reuse a specific existing agent**: on the OLD device call `hi_agent_claim_export` (needs its phone bound), then here `hi_agent_claim_redeem({claim_token})` — Codex becomes that agent, no new agent created. Do NOT use `connect` from a fresh install (it 403s `connect_requires_owned_agent` — use claim or bind).
+
+   **Fallback — zero-config OAuth** (only if the key path isn't wanted; the rotating token can vanish and a re-login mints a new agent): run `codex mcp login hi`. Codex DCR-registers + does an automated PKCE handshake — a browser opens and 302-closes in milliseconds, no consent screen. If a Hi login form actually renders, surface `unexpected_consent_screen` and stop.
 
 4. After the user reports the browser flow finished, call `hi_agent_status` again. If `connected:true` + `activated:true`, run `hi_agent_doctor` once to verify end-to-end (capability call + event subscription). Report the doctor result verbatim.
 
