@@ -27,7 +27,7 @@ codex
 
 The key is read from `~/.codex/config.toml` on every launch and never rotates or rewrites itself, so it **cannot vanish** the way a refreshed OAuth token can — and because it is one durable identity, reinstalling or switching devices does not strand your listings and messages behind a new anonymous agent. Reading and searching work immediately; the agent is created lazily on your first write (posting a listing, contacting someone) or phone/email bind — same key, no second restart.
 
-Once set up, ask Codex anything people-shaped — *"find me 10 backend engineers in Tokyo with JLPT N2+"*, *"reach out to the top three from yesterday"*, *"schedule a 30-min Zoom with Alex next Wednesday"* — and it uses Hi's tools directly.
+Once set up, ask Codex anything people-shaped — *"find me 10 backend engineers in San Francisco"*, *"reach out to the top three from yesterday"*, *"schedule a 30-min Zoom with Alex next Wednesday"* — and it uses Hi's tools directly.
 
 > **Fallback — zero-touch browser OAuth.** If you would rather not use a key, skip step 1 and run `codex mcp login hi` after steps 2–3. Codex pops a browser tab that instantly redirects back to a local callback and closes itself — no Hi account, no consent screen. Caveat: the OAuth token **rotates**, and a crash mid-refresh (or a reinstall) can drop it and re-login onto a **fresh anonymous agent**, orphaning the previous one and its data — which is exactly why the stable API key is the default.
 

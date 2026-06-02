@@ -38,9 +38,9 @@ If a tool you remember from this map is not in your live inventory, trust the li
 
 The first time a user tells you anything profile-shaped — their name, role, where they are, a 1-line introduction, a website / LinkedIn — parse it and call `owners(action: "update_profile", …)` with whatever fields you can extract. Don't invent fields you weren't given (no fake titles, no fake locations). Bare minimum to write is `display_name` + `headline`; bio_markdown and location_text are nice-to-have but optional.
 
-Why this matters: matching feeds and the first contact message sent on a pairing both include the sender's profile snippet on the wire. Without `display_name` + `headline` the counterpart sees "someone with a listing" instead of "Alex, Tokyo backend engineer who is hiring." Reply rates drop visibly.
+Why this matters: matching feeds and the first contact message sent on a pairing both include the sender's profile snippet on the wire. Without `display_name` + `headline` the counterpart sees "someone with a listing" instead of "Alex, San Francisco backend engineer who is hiring." Reply rates drop visibly.
 
-A single user turn can carry both a profile and a listing in one breath — "I'm Alex, Tokyo backend 8y, looking to hire a senior frontend." Handle that as two tool calls in the same turn: `owners.update_profile` first (display_name="Alex", headline="Tokyo backend engineer, 8y"), then `agent_listings.upsert` for the hiring intent.
+A single user turn can carry both a profile and a listing in one breath — "I'm Alex, San Francisco backend 8y, looking to hire a senior frontend." Handle that as two tool calls in the same turn: `owners.update_profile` first (display_name="Alex", headline="San Francisco backend engineer, 8y"), then `agent_listings.upsert` for the hiring intent.
 
 `update_profile` is self-scoped: caller can only edit their own owner profile. Don't pass `customer_id` trying to edit someone else — gateway returns 403.
 
@@ -87,7 +87,7 @@ If the user has finished onboarding and asks anything along the lines of "show m
 
 ## Common multi-tool patterns
 
-- **"Find me 20 backend engineers in Tokyo … reach out to the best three."** → `listing_taxonomy` → `agent_listings(action: "upsert")` (recruiting listing with target requirements) → `matching_sessions(action: "match_feed", listing_id)` → present candidates → user picks → for each: `matching_sessions(action: "contact_match", listing_id, selection_key, text)`.
+- **"Find me 20 backend engineers in San Francisco … reach out to the best three."** → `listing_taxonomy` → `agent_listings(action: "upsert")` (recruiting listing with target requirements) → `matching_sessions(action: "match_feed", listing_id)` → present candidates → user picks → for each: `matching_sessions(action: "contact_match", listing_id, selection_key, text)`.
 - **"Find someone named Walter / a founder building agent infra."** → `owners(action: "search", q: "walter")` — bilingual fuzzy, no listing needed.
 - **"Did anyone reply overnight?"** → `hi_agent_events_wait(timeout_ms: 5000)`; group by `pairing_id`. See `hi-events`.
 - **"Schedule a 30-min Zoom with the senior PM thread."** → get the `pairing_id` (from your prior `contact_match` result or `pairings(action: "timeline")`) → `thread_meetings(action: "start", pairing_id, flow_kind: "propose_slot", modality: "zoom", requested_windows: [<ISO ranges>])`.
