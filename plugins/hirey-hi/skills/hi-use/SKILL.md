@@ -34,6 +34,17 @@ Once Hi is connected (the default setup writes a stable `hi_ak_` key into `~/.co
 
 If a tool you remember from this map is not in your live inventory, trust the live inventory — the catalog is the source of truth, this map may lag.
 
+## Binding / connecting your identity to Hi (proactive)
+
+When the user wants to **bind / connect / add / save** their **email, phone, or Google account to Hi** — to keep their identity, recover their workspace across devices/reinstalls, or unlock writes — use **Hi's OWN tools**:
+
+- **Email → default `google_link`** (one-click Sign in with Google): `google_link({action:"start"})` → give the user the `verification_url` → `google_link({action:"poll"})` until `status:"verified"`. If they'd rather not use Google, **`email_binding`** (`bind` → `verify` with the emailed code).
+- **Phone → `phone_binding`** (`bind` → `verify` with the SMS code).
+
+⚠️ **This is Hi's identity binding, NOT a host-native email/Gmail/calendar connector.** Never tell the user to reauthorize or reconnect a host app (e.g. a Codex/OpenClaw "Gmail connector") for this — that's a different thing and won't bind them to Hi. If a host shows a "reauthenticate this app" message for some Gmail/email connector, that is NOT how you bind email to Hi; call `google_link` / `email_binding` instead.
+
+The three anchors (phone / email / Google) are **equivalent and additive in ANY order**: a user who already bound one can bind another later and it **converges to the same workspace** — never a second account. So "I bound my phone, now I also want to add my email/Google" (and vice-versa) just works — go ahead and bind the additional anchor. Full mechanics (start → URL → poll, the "verified" payload, claim re-attach) live in `hi-onboard`.
+
 ## Profile collection (call before the first listing)
 
 The first time a user tells you anything profile-shaped — their name, role, where they are, a 1-line introduction, a website / LinkedIn — parse it and call `owners(action: "update_profile", …)` with whatever fields you can extract. Don't invent fields you weren't given (no fake titles, no fake locations). Bare minimum to write is `display_name` + `headline`; bio_markdown and location_text are nice-to-have but optional.
