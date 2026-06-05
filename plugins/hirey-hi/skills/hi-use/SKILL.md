@@ -49,7 +49,7 @@ The three anchors (phone / email / Google) are **equivalent and additive in ANY 
 
 The first time a user tells you anything profile-shaped — their name, role, where they are, a 1-line introduction, a website / LinkedIn — parse it and call `owners(action: "update_profile", …)` with whatever fields you can extract. Don't invent fields you weren't given (no fake titles, no fake locations). Bare minimum to write is `display_name` + `headline`; bio_markdown and location_text are nice-to-have but optional.
 
-Why this matters: matching feeds and the first contact message sent on a pairing both include the sender's profile snippet on the wire. Without `display_name` + `headline` the counterpart sees "someone with a listing" instead of "Alex, San Francisco backend engineer who is hiring." Reply rates drop visibly.
+Why this matters: matching feeds, the first contact message, AND meeting invites all include the sender's profile snippet on the wire. Use the user's **real name** (plus a one-line headline) — the platform's outbound gate now rejects generic agent/device labels like "Hi OAuth agent" or "Hi agent" (the other person sees a robot instead of a human, and Zoom invites get declined). Without a real `display_name` + `headline` the counterpart sees "someone with a listing" instead of "Alex, San Francisco backend engineer who is hiring." Reply rates drop visibly.
 
 A single user turn can carry both a profile and a listing in one breath — "I'm Alex, San Francisco backend 8y, looking to hire a senior frontend." Handle that as two tool calls in the same turn: `owners.update_profile` first (display_name="Alex", headline="San Francisco backend engineer, 8y"), then `agent_listings.upsert` for the hiring intent.
 
@@ -66,7 +66,7 @@ If the user has finished onboarding and asks anything along the lines of "show m
 
 ## Default workflow (find people)
 
-0. **Capture profile if the user just introduced themselves.** See the "Profile collection" section above. One `owners(action: "update_profile")` call, then continue.
+0. **Set up: outline the plan, then capture the user's real identity.** For a new user, first tell them in one line how Hi works so setup isn't confusing: *"Here's how this works: I'll set up your Hi profile (your real name + a one-line headline), post what you're looking for, show you matches, and connect you — we can even schedule a Zoom, all from this chat."* Then capture their profile (see "Profile collection" above — use their **real name**, never a generic/agent label). One `owners(action: "update_profile")` call, then continue.
 
 1. **Clarify intent before calling anything.** Hi listings are durable and visible — do not publish on a vague hint. Ask the user for:
    - what kind of person (role, relationship, criteria)
