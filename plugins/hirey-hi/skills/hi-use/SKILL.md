@@ -24,6 +24,9 @@ Once Hi is connected (the default setup writes a stable `hi_ak_` key into `~/.co
 | **Find a specific person / listing by NAME or free text** (anonymous, no listing needed) | `owners` | **`search`** with `q` (e.g. `q:"walter"` or `q:"founder building agent infra"`) — fuzzy + bilingual EN↔中文; searches profiles AND listings; returns `people[]` + `listings[]`. Use this for "搜一个叫 X 的人" / "find someone who does Y", NOT `matching_sessions.search` (that needs a published source listing). |
 | Capture / update who the user is (name, headline, bio, location, links) | `owners` | actions: `update_profile`, `get`, `list_listings`, `peers_feed` — **call this first** before the first listing whenever the user has just introduced themselves |
 | Publish a search ("I want to find …") | `agent_listings` | actions: `upsert`, `update_status`, `get`, `list`, `browse_recent` |
+| **Get the public URL of anything you made** (pages + share links) | `public_pages` | action `get` (no args = ALL your URLs; or `ref={kind,id\|public_id}` for one thing) |
+| Create / manage the user's company page | `companies` | actions: `create`, `update`, `get`, `archive`, `list_recent`, `list_listings` |
+| Resolve "who is this" + public URLs from any id | `agents` | action `resolve` (`by`=`owner_public_id`/`company_id`/`listing_id`/…) |
 | See what matched | `matching_sessions` | actions: `match_feed`, `search`, `contact_match` (source listing must be published first) |
 | Open a 1:1 thread with a matched person | `pairings` | actions: `create`, `timeline`, `contact_target` |
 | Negotiate / schedule a meeting | `thread_meetings` | actions: `start`, `respond`, `get` |
@@ -54,6 +57,24 @@ Why this matters: matching feeds, the first contact message, AND meeting invites
 A single user turn can carry both a profile and a listing in one breath — "I'm Alex, San Francisco backend 8y, looking to hire a senior frontend." Handle that as two tool calls in the same turn: `owners.update_profile` first (display_name="Alex", headline="San Francisco backend engineer, 8y"), then `agent_listings.upsert` for the hiring intent.
 
 `update_profile` is self-scoped: caller can only edit their own owner profile. Don't pass `customer_id` trying to edit someone else — gateway returns 403.
+
+## Public pages & share links — every published thing has a shareable URL
+
+Everything the user creates on Hi has a public web page they can open and forward (no login to view), all cross-linked to each other:
+- **owner / personal page** — `hi.hirey.ai/owner/<id>` (also the "agent page" — same page, aliased),
+- **company page** — `hi.hirey.ai/company/<id>`,
+- each **listing / demand page** — `hi.hirey.ai/listing/<id>`.
+
+**Hand the URL back after every publish** — each write already returns its link, so surface it:
+- `agent_listings` `upsert` / `update_status` / `get` → `listing_public_url` (+ `listing_public_url_status`: `public` / `unlisted` / `private_not_shareable`; null when the listing is private or not open).
+- `owners` `update_profile` / `get` → `owner_public_url`.
+- `companies` `create` / `update` / `get` → `company.public_url` (+ `company.owner_public_url`).
+
+**When the user asks "what's my page / link?" call `public_pages`** — the single place to fetch any/all URLs:
+- `public_pages({action:"get"})` → `{owner_public_url, company_public_url, listings:[{listing_id, summary, status, listing_public_url, listing_public_url_status}]}` — all of the user's links at once.
+- `public_pages({action:"get", ref:{kind:"listing", id:"<listing_id>"}})` → `{public_url, public_url_status}` — one thing (kind = `listing` | `owner` | `agent` | `company`).
+
+A private or closed listing has no shareable URL (`public_url_status` says why) — tell the user that instead of inventing a link.
 
 ## Discovery — "people you might be interested in"
 
