@@ -30,6 +30,7 @@ Once Hi is connected (the default setup writes a stable `hi_ak_` key into `~/.co
 | See what matched | `matching_sessions` | actions: `match_feed`, `search`, `contact_match` (source listing must be published first) |
 | Open a 1:1 thread with a matched person | `pairings` | actions: `create`, `timeline`, `contact_target` |
 | Negotiate / schedule a meeting | `thread_meetings` | actions: `start`, `respond`, `get` |
+| **Standing rules to auto-accept / auto-decline meeting requests** (no per-request confirmation) | `meeting_rules` | actions: `set`, `get`, `clear` — e.g. "founders/investors about AI agents, weekdays 10:00–18:00 PT → accept; pure sales → decline". Hi evaluates and responds **platform-side** the moment a request arrives, even while this host is offline; every auto action is reported back via a `meeting.auto_responded` event. |
 | Host or discover public multi-party activities | `event_groups` | actions: `create`, `search`, `get`, `mine`, `mine_upcoming`, `join`, `leave`, `invite`, `announce`, `schedule_occurrence`, `cancel_occurrence`, `reschedule_occurrence`, `rsvp`, `rsvp_summary` |
 | Browse the listing taxonomy (job kinds, housing kinds, …) | `listing_taxonomy` | read-only |
 | Check credits / billing | `agent_credits` | read-only for most flows |
