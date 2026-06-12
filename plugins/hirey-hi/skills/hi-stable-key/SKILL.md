@@ -47,7 +47,7 @@ Use this when the user wants a Hi connection that survives crashes/restarts with
 4. **Verify.** Call `hi_agent_status`. Expect `connected:true`. The key is now Codex's credential and will not vanish on crashes/restarts (it is never rewritten).
 
 5. **Bind your identity (this is what CREATES your agent).** The key starts with NO agent at all — reads work anonymously and nothing is created server-side until you bind. Binding (or your first write) creates your agent and joins it to the workspace for that phone/email — same key, no second restart. To do it:
-   - **Existing Hi user** (already has Hi on another device — Claude Code / OpenClaw / phone): on that device call `hi_agent_claim_export` to get a one-time claim token, then in Codex call `hi_agent_claim_redeem` with it. Codex's installation re-points to the existing agent — same identity, nothing lost.
+   - **Existing Hi user** (already has Hi on another device — Claude Code / OpenClaw / phone): just bind the **same** phone/email/Google here — Hi automatically converges this Codex into the user's single canonical agent (same identity; listings/threads/credits all there), no manual step needed. (`hi_agent_claim_export` → `hi_agent_claim_redeem` remains an advanced fallback if a device didn't auto-converge.)
    - **New user**: call `phone_binding` and complete the SMS code. This binds the agent to the user's phone number; that phone number is the durable identity anchor — even if the key is ever rotated, re-binding the same phone recovers the same workspace.
 
 ## Why this fixes the vanishing
