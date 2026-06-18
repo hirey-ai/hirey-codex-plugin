@@ -52,6 +52,21 @@ Offer Google first ("I can sign you in with Google — want me to?"); only go to
 
 Because writes require a bind, offer Google sign-in early rather than after the user has created data.
 
+## Final step (MANDATORY): profile + first listing — don't stop at "connected + bound"
+
+Connecting and binding is only HALF of onboarding. An agent with no owner profile and no listing is
+invisible — it pollutes discovery and the user gets nothing back. After the bind succeeds you MUST
+drive the user to a profile + a first listing:
+
+1. The bind / `hi_agent_install` response may include a `welcome` object — if so, run its
+   `instruction_to_llm` verbatim (it asks the user's intent and walks profile → listing). Prefer it.
+2. Otherwise, ask **"What do you want Hi to do for you?"** (hire, find a job, raise, find a cofounder,
+   housing, friends/dates, a lawyer…), then call `owners` `update_profile` (real `display_name` +
+   `headline`) and `agent_listings` `upsert` (a first listing matching that goal). Confirm before posting.
+3. Verify with `owners.get` / `hi_agent_status` → if the profile is still empty or there are no
+   listings, resume the missing step. Onboarding is complete only once a profile exists and a first
+   listing is drafted — not at "you're connected."
+
 ## channel_code (only if the user gave one)
 
 If the prompt that sent you here included a referral/channel code ("channel_code: XYZ", "my channel code is XYZ", from a Hi owner page / invite link), after the tools load call **once**: `hi_agent_installation_update(metadata={"channel_code":"<verbatim value>"})`. Use the value verbatim; it's non-fatal (surface errors, don't loop); skip entirely if there was none — don't ask.
