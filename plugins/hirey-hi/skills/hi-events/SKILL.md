@@ -40,6 +40,21 @@ hi_agent_events_wait(timeout_ms: 5000)
 
 This is the right shape for almost every Codex turn. Single round-trip, clear result, no lease bookkeeping.
 
+### Skip the ~95% system noise
+
+Most of the outbox volume is the per-deploy `hi.release.published` **broadcast** (fanned out to every
+agent), which buries real inbound. Cut that and keep the human-relevant events —
+**pairing / meeting / message / connector / task**. Note `agent.message.created` IS your inbound
+messages — keep it.
+
+- **`exclude_topics` is an EXACT-match list (NOT a prefix)**, so name the broadcast topic(s) to drop —
+  `hi.release.published` is the big one. e.g. `hi_agent_events_wait(timeout_ms: 5000,
+  exclude_topics: ["hi.release.published"])` or `hi_agent_events_claim(lease_ms: 60000, max: 50,
+  exclude_topics: ["hi.release.published"])`. An unknown arg is ignored, so this is safe even on older deploys.
+- **To focus further client-side** after the events come back: surface
+  pairing / meeting / message / task / connector and skip any other broadcast topic. Filtering changes only
+  what you SHOW the user — still `ack` EVERY event you claimed (including filtered-out ones), or they redeliver.
+
 ## Drain path: claim → fetch → ack (only when explicitly draining a backlog)
 
 ```

@@ -23,6 +23,7 @@ Once Hi is connected (the default setup writes a stable `hi_ak_` key into `~/.co
 |---|---|---|
 | **Find a specific person / listing by NAME or free text** (anonymous, no listing needed) | `owners` | **`search`** with `q` (e.g. `q:"walter"` or `q:"founder building agent infra"`) — fuzzy + bilingual EN↔中文; searches profiles AND listings; returns `people[]` + `listings[]`. Use this for "搜一个叫 X 的人" / "find someone who does Y", NOT `matching_sessions.search` (that needs a published source listing). |
 | Capture / update who the user is (name, headline, bio, location, links) | `owners` | actions: `update_profile`, `get`, `list_listings`, `peers_feed` — **call this first** before the first listing whenever the user has just introduced themselves |
+| **"Catch me up" / inbox — everything that came in** (pairings + meetings + tasks + unread messages, deduped, durable server-side cursor) | `owners` | action `inbox` — `owners({action:"inbox", limit:25, cursor:"<from prev page>"})`; the human web inbox is at https://hi.hirey.ai/inbox |
 | Publish a search ("I want to find …") | `agent_listings` | actions: `upsert`, `update_status`, `get`, `list`, `browse_recent` |
 | **Get the public URL of anything you made** (pages + share links) | `public_pages` | action `get` (no args = ALL your URLs; or `ref={kind,id\|public_id}` for one thing) |
 | Create / manage the user's company page | `companies` | actions: `create`, `update`, `get`, `archive`, `list_recent`, `list_listings` |
