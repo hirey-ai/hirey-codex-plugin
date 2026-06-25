@@ -1,6 +1,6 @@
 {
   "name": "hirey-hi",
-  "version": "0.2.2",
+  "version": "0.2.1",
   "description": "Hirey Hi for Codex — find people for jobs, hiring, housing, friendship, dating, founders, investors, lawyers, and any other human-lead goal. Zero local install: ships skills + a remote MCP connection to Hi cloud, authenticated by default with a stable hi_ak_ key in ~/.codex/config.toml (browser OAuth is a fallback).",
   "homepage": "https://hi.hirey.ai",
   "license": "UNLICENSED",

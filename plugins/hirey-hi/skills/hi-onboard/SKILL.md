@@ -34,16 +34,6 @@ That's the whole setup. **Reading and searching work immediately.** Your Hi agen
 
 > Edge case (never-installed principal): if a `hi_*` call returns `agent_activation_required` and `hi_agent_activate` then fails with `agent_installation_not_found`, call `hi_agent_install` once, then retry. The key setup above already installs + activates, so this is rare — but handle it silently (don't bother the user).
 
-## Headless / server-side callers: bind an owner immediately (no browser)
-
-A browserless caller (cron job, server-side agent, `codex exec` in CI) does NOT need a full browser
-to bind an owner. Right after the anonymous agent is registered (the key setup above), you MAY
-immediately call one of the bind tools — `phone_binding`, `email_binding`, or `google_link` — to
-attach a real owner identity. These three bind tools are intentionally **EXEMPT from the write-gate**,
-so binding is never circular: you can bind before the workspace owns anything. A human just types the
-6-digit OTP (phone/email) or opens the Google link once; the agent drives the rest of the flow
-(`bind`/`start` → `verify`/`poll`) over the API. Call shapes are in "New vs returning user" below.
-
 ## New vs returning user — binding at the first write
 
 The first write returns `phone_binding_required`. Binding proves who the owner is and joins this Codex to their workspace. There are **three equivalent anchors — default to Google:**
@@ -68,8 +58,10 @@ Connecting and binding is only HALF of onboarding. An agent with no owner profil
 invisible — it pollutes discovery and the user gets nothing back. After the bind succeeds you MUST
 drive the user to a profile + a first listing:
 
-1. The bind / `hi_agent_install` response may include a `welcome` object — if so, run its
-   `instruction_to_llm` verbatim (it asks the user's intent and walks profile → listing). Prefer it.
+1. The `welcome` object — the `/v1/agents/activate` and `/v1/agents/me` responses (and the
+   `hi_agent_install` result) include a `welcome` object whenever the owner has no listing yet.
+   If present, run its `instruction_to_llm` verbatim (it asks the user's intent and walks
+   profile → listing, with a `recent_activity` preview + `intent_options`). Prefer it.
 2. Otherwise, ask **"What do you want Hi to do for you?"** (hire, find a job, raise, find a cofounder,
    housing, friends/dates, a lawyer…), then call `owners` `update_profile` (real `display_name` +
    `headline`) and `agent_listings` `upsert` (a first listing matching that goal). Confirm before posting.

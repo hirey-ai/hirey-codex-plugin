@@ -23,7 +23,6 @@ Once Hi is connected (the default setup writes a stable `hi_ak_` key into `~/.co
 |---|---|---|
 | **Find a specific person / listing by NAME or free text** (anonymous, no listing needed) | `owners` | **`search`** with `q` (e.g. `q:"walter"` or `q:"founder building agent infra"`) — fuzzy + bilingual EN↔中文; searches profiles AND listings; returns `people[]` + `listings[]`. Use this for "搜一个叫 X 的人" / "find someone who does Y", NOT `matching_sessions.search` (that needs a published source listing). |
 | Capture / update who the user is (name, headline, bio, location, links) | `owners` | actions: `update_profile`, `get`, `list_listings`, `peers_feed` — **call this first** before the first listing whenever the user has just introduced themselves |
-| **"Catch me up" / inbox — everything that came in** (pairings + meetings + tasks + unread messages, deduped, durable server-side cursor) | `owners` | action `inbox` — `owners({action:"inbox", limit:25, cursor:"<from prev page>"})`; the human web inbox is at https://hi.hirey.ai/inbox |
 | Publish a search ("I want to find …") | `agent_listings` | actions: `upsert`, `update_status`, `get`, `list`, `browse_recent` |
 | **Get the public URL of anything you made** (pages + share links) | `public_pages` | action `get` (no args = ALL your URLs; or `ref={kind,id\|public_id}` for one thing) |
 | Create / manage the user's company page | `companies` | actions: `create`, `update`, `get`, `archive`, `list_recent`, `list_listings` |
@@ -85,7 +84,15 @@ If the user has finished onboarding and asks anything along the lines of "show m
 - `items[]` — owner profile cards (display_name + headline + location_text + avatar_url + owner_public_url + `suggested_because`). Surface 5–10 to the user. Don't paraphrase the fields — quote them as-is.
 - `caller_profile_ready` — if `false`, the user's own profile is too sparse for the other side to take them seriously. Suggest a quick `owners.update_profile` before proceeding.
 
-**Discovery is not a contact entry.** `peers_feed` returns owner identity, not listing IDs or selection keys. To actually reach out to one of these owners, both sides still need a listing → matching → contact_match flow. Don't try to pass `owner_public_id` into `pairings.create`; it won't bind.
+**Reaching one of these owners — use `contact_owner`, no listing needed.** `peers_feed` / `search` return each owner's `owner_public_url`, which carries their public id. To contact them, call `pairings(action: "contact_owner", target_owner_public_id: <that public id>, text: "...")` (or pass `target_owner_customer_id` / `target_agent_id` instead) — Hi creates the pairing for you; you do **not** need a listing, a match, or `contact_match` first. (You must have your own owner profile set up — if you hit `caller_owner_unresolved` / a profile-required error, run `owners.update_profile` first.) Reserve the listing → matching → `contact_match` flow for when you're acting on a specific published listing/selection.
+
+## Find a specific person by name → search FIRST (a name in a listing ≠ that person)
+
+When the user names someone or says "find / contact / reach **<name>** [in <place>]", your FIRST call is `owners(action: "search", q: "<name> <place>")` (e.g. `q: "Mark Arizona"`) — **before** you look at any match feed. Then reach them with `pairings(action: "contact_owner", target_owner_public_id: …)` (no listing needed — see Discovery above).
+
+- **A name inside a *listing's body* is NOT that person.** `matching_sessions` rank *listings*; a listing reading "looking for someone named Mark" is its **author's wanted counterpart**, not Mark. Never present a listing's author/subject as the person searched for.
+- **Put the place in the query** — a bare common name returns a wall of unrelated people; `"Mark Arizona"` floats the right one up.
+- **Never say "there is no <name>"** until `owners(action: "search")` has actually run and you've reported its literal `people[]`. "Not in the match feed" ≠ "doesn't exist."
 
 ## Default workflow (find people)
 
