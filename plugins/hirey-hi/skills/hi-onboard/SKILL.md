@@ -76,13 +76,17 @@ Read `_meta.hirey_plugin` (or `structuredContent.plugin` from `hi_agent_status`)
 The current Codex update is:
 
 ```bash
-codex plugin marketplace upgrade hirey
+codex plugin marketplace remove hirey
+codex plugin marketplace add hirey-ai/hirey-codex-plugin
 codex plugin add hirey-hi@hirey
 ```
 
 After an update, fully restart Codex. Never edit the marketplace file or cached Skill by hand.
 The command block describes the allowlisted arguments; invoke them through `codex_bin`. Never ask
 the user to paste these commands into Terminal.
+
+Removing and re-adding the marketplace is intentional: older installations may be pinned to a tag,
+and `marketplace upgrade` preserves that pin instead of installing the current release.
 
 ## Status recovery
 
