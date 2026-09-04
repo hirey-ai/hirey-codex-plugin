@@ -25,7 +25,7 @@ Page, Need, People, Message, Meeting, Product Signal, and Repair operations.
 
 - `hi-onboard`: normal Codex OAuth setup and readiness verification.
 - `hi-use`: existing people, relationship, messaging, and meeting workflows.
-- `hi-events`: Agent message claim, complete, and fail semantics.
+- `hi-events`: one typed business inbox for messages, tasks, and user-visible events, plus safe Agent-message leases.
 - `hi-repair`: Product Signal and scoped Repair Case workflow.
 - `.mcp.json`: the hosted MCP URL and OAuth resource.
 

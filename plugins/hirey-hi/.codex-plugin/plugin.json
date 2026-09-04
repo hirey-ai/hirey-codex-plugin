@@ -1,6 +1,6 @@
 {
   "name": "hirey-hi",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "Hirey Hi for Codex — use the existing HiRey Person, Workspace, Moment, Page, Need, People, Message and Meeting workflows through the hosted MCP service.",
   "author": {
     "name": "Hirey",
@@ -21,7 +21,7 @@
       "MCP"
     ],
     "defaultPrompt": [
-      "Start Hi with `hi_agent_status` using version 0.2.9. Follow `hi-onboard` for update, login, or credential recovery.",
+      "Start Hi with `hi_agent_status` using version 0.2.10. Follow `hi-onboard` for update, login, or credential recovery.",
       "Use `workspace_workflows` and its live catalog. Anonymous access stays bounded; private Workspace work requires login.",
       "On 401 use `error_code`: resolve the Codex executable and perform recovery for the user; never ask them to type a codex command."
     ],
