@@ -27,7 +27,7 @@ installation has no callable CLI and stop without changing the Hi configuration.
 2. Run the MCP login with `codex_bin` and let the user finish only the browser OAuth page.
 3. Fully quit and relaunch Codex so the MCP server and its tools load in the new session.
 4. Verify that `hi_agent_status` and `workspace_workflows` are present.
-5. Call `hi_agent_status` with `client_plugin_version: "0.2.9"`, then call
+5. Call `hi_agent_status` with `client_plugin_version: "0.2.10"`, then call
    `workspace_workflows` with `action: catalog` before continuing.
 
 If OAuth returns an error, report that exact error. Do not fall back to a local MCP process, an npm
@@ -51,7 +51,7 @@ overriding OAuth. For `invalid_token`, `missing_bearer`, or a failed OAuth refre
    recreate the normal OAuth entry at `https://mcp.hirey.ai/mcp`. Do not edit TOML by hand.
 4. Use `codex_bin` to start login when the add operation did not already complete OAuth; let the
    user complete only the normal Hi login page in the browser.
-5. Fully quit and relaunch Codex. In the new session call `hi_agent_status` with version `0.2.9`,
+5. Fully quit and relaunch Codex. In the new session call `hi_agent_status` with version `0.2.10`,
    then call `workspace_workflows` with `action: catalog` and retry the original request once.
 
 Do not use `/v1/agents/api-keys` for this recovery. That endpoint is only for a user who explicitly
@@ -71,18 +71,22 @@ Read `_meta.hirey_plugin` (or `structuredContent.plugin` from `hi_agent_status`)
 - `update_recommended: true` with `update_required: false`: tell the user an update is available but
   do not block a compatible anonymous read or business operation.
 - `update_required: null`: the server did not receive the local version. Compare this Skill's
-  version (`0.2.9`) with `minimum_supported` and `latest` locally.
+  version (`0.2.10`) with `minimum_supported` and `latest` locally.
 
 The current Codex update is:
 
 ```bash
-codex plugin marketplace upgrade hirey
+codex plugin marketplace remove hirey
+codex plugin marketplace add hirey-ai/hirey-codex-plugin
 codex plugin add hirey-hi@hirey
 ```
 
 After an update, fully restart Codex. Never edit the marketplace file or cached Skill by hand.
 The command block describes the allowlisted arguments; invoke them through `codex_bin`. Never ask
 the user to paste these commands into Terminal.
+
+Removing and re-adding the marketplace is intentional: older installations may be pinned to a tag,
+and `marketplace upgrade` preserves that pin instead of installing the current release.
 
 ## Status recovery
 

@@ -9,7 +9,7 @@ Hi exposes one MCP tool, `workspace_workflows`. Its `action: catalog` result is 
 for the existing operations, their purpose, write behavior, and confirmation requirement.
 
 Before the first Hi business call in a new session, call
-`hi_agent_status({"client_plugin_version":"0.2.9"})`. Follow its plugin policy and authentication
+`hi_agent_status({"client_plugin_version":"0.2.10"})`. Follow its plugin policy and authentication
 state exactly. A recommended update does not block a compatible call; a required update ends the
 current session after upgrading because Codex reloads Skills only in a new session.
 
