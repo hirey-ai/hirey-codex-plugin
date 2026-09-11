@@ -8,7 +8,7 @@ spec = importlib.util.spec_from_file_location("conflict", path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 PLUGIN = {"mcpServers": {"hi": {"url": "https://mcp.hirey.ai/mcp",
-          "http_headers": {"x-hirey-plugin-host": "codex", "x-hirey-plugin-version": "0.2.12"}}}}
+          "http_headers": {"x-hirey-plugin-host": "codex", "x-hirey-plugin-version": "0.2.13"}}}}
 
 
 class ConflictTests(unittest.TestCase):
