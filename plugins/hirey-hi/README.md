@@ -16,7 +16,7 @@ manually managed API key.
    browser OAuth page and never needs to type a `codex` command.
 3. Fully restart Codex.
 4. Verify `hi_agent_status` and `workspace_workflows` are present.
-5. Call `hi_agent_status` with `client_plugin_version: "0.2.12"`, then call
+5. Call `hi_agent_status` with `client_plugin_version: "0.2.13"`, then call
    `workspace_workflows` with `action: catalog`.
 
 The live catalog contains the implemented Person, Workspace, Moment, Page, Need, People, Message,

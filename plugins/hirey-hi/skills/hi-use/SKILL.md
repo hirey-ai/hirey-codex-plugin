@@ -9,7 +9,7 @@ Hi exposes one MCP tool, `workspace_workflows`. Its `action: catalog` result is 
 for the existing operations, their purpose, write behavior, and confirmation requirement.
 
 Before the first Hi business call in a new session, call
-`hi_agent_status({"client_plugin_version":"0.2.12"})`. Follow its plugin policy and authentication
+`hi_agent_status({"client_plugin_version":"0.2.13"})`. Follow its plugin policy and authentication
 state exactly. A recommended update does not block a compatible call; a required update ends the
 current session after upgrading because Codex reloads Skills only in a new session.
 
@@ -46,3 +46,28 @@ or private reads before login.
 These are existing Core operation names, not aliases. If an action is absent from the live catalog,
 do not call it. Searches and messages affect real people; surface returned facts and confirm external
 effects exactly as the catalog requires.
+
+## Connect me with someone
+
+When the user asks to reach, connect with, or get an introduction to a specific Person, complete the
+workflow instead of stopping after drafting suggested prose:
+
+1. Search `people.find_private` first. Use `people.find` only when the private result does not identify
+   the target. If multiple people match, ask the user to disambiguate before continuing.
+2. Call `contact.policy` with that exact `target_person_id`. Treat its `reach` object as the only
+   executable route authority; never infer a Connector from `relationship.list` or from prose.
+   If `allowed` is false, stop and report the returned reason without proposing a workaround.
+3. If `reach.kind` is `direct`, collect the user's purpose/message and, after the catalog-required
+   confirmation, call `contact.intent` for the exact target.
+4. If `reach.kind` is `one_hop`, use only `reach.connector_candidates`:
+   - with one candidate, name the Connector and ask for the user's purpose plus confirmation;
+   - with multiple candidates, show those names and let the user choose one;
+   - then call `reach.route.plan` with the selected candidate's exact `hops`, the user's intent, a
+     stable idempotency key, and the required explicit confirmation.
+5. If `reach.kind` is `keep_looking`, say that no executable route currently exists. Offer to save a
+   private Need with `need.create`; do not fabricate a Connector or imply that outreach was sent.
+
+After planning a route, report that the next participant must decide it. `reach.route.decide` advances
+the exact pending hop; when every participant accepts, Core creates the direct conversation and sends
+the original intent. Use `reach.route.get` for status. Never claim completion before its status is
+`completed`, and never expose non-adjacent private graph edges.
