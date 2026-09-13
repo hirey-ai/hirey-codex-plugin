@@ -1,0 +1,81 @@
+{
+  "schema": "hirey.agent_package.v1",
+  "generated_by": "scripts/build-agent-packages.mjs",
+  "host": {
+    "id": "codex",
+    "displayName": "Codex"
+  },
+  "plugin": {
+    "name": "hirey-hi",
+    "marketplace": "hirey",
+    "version": "0.2.13"
+  },
+  "versions": {
+    "sharedSkills": "0.1.0",
+    "backendContract": {
+      "tool": "workspace_workflows",
+      "version": "v1"
+    },
+    "plugin": "0.2.13",
+    "publicLatest": "0.2.12",
+    "minimumSupported": "0.2.9",
+    "packageState": "candidate"
+  },
+  "output_root": "host-plugins/plugins/hirey-hi",
+  "source_content_digest": "sha256:08bb4d8d64ff789477fea008b99cebf439ac12a80edc1f86b5c6719fc357a928",
+  "package_digest": "sha256:f05fd6d2690e8851af19b8886f055c0bce9a6529c0903ff3a3255a49b11645d7",
+  "files": [
+    {
+      "path": ".codex-plugin/plugin.json",
+      "sha256": "9ab2b8ff219666276ba95a408af8d58d50e22f4f22a1c9f4cc471764af3e8962"
+    },
+    {
+      "path": ".mcp.json",
+      "sha256": "31b48ca5f46823eac1c2d0f8568549fc30688caf5b33a51416b922872cca8843"
+    },
+    {
+      "path": "README.md",
+      "sha256": "4f8c5e7f51f53b91270a9d14870c24940bb658b8b1653cccba52f454d4d540c6"
+    },
+    {
+      "path": "skills/agentic-media/SKILL.md",
+      "sha256": "9fbe8d0fe6f3e1464c04ee243dfc4f4744ba885495308c2d5d7da5e47e63cb76"
+    },
+    {
+      "path": "skills/agentic-media/references/control-contract.md",
+      "sha256": "5c5e933247d59b098871669c8f16e6090766bf623f0c97fbeb0b87a53f4ec420"
+    },
+    {
+      "path": "skills/agentic-media/scripts/agentic_media_upload.py",
+      "sha256": "9e0a8413b6f11f606c064a9313ac2f7fb2196861f9cf3c760b0a5b9a9bc68922"
+    },
+    {
+      "path": "skills/hi-events/SKILL.md",
+      "sha256": "ff576aca58a711a07f466c531d29ea76068a7ad8394610d62412b24db3efaa00"
+    },
+    {
+      "path": "skills/hi-onboard/SKILL.md",
+      "sha256": "d17eae85367a397fcaad01f08174c7f3864f20e874b5eaaf4274968dafd745df"
+    },
+    {
+      "path": "skills/hi-onboard/references/common.md",
+      "sha256": "091c062fa7162df2a9b29f042a9da95b7fd98334c622fe3c47b4457f2e41fa9d"
+    },
+    {
+      "path": "skills/hi-onboard/scripts/check_mcp_conflict.py",
+      "sha256": "48cf523c1ef9910e09ca0ae6939c8beb5f6496fddf75baa65d9e90cad4fa64fd"
+    },
+    {
+      "path": "skills/hi-repair/SKILL.md",
+      "sha256": "6e5ca5a8cac3b194963a69261a366e332027fa7fc9b138b59dbfb0f78896f970"
+    },
+    {
+      "path": "skills/hi-repair/agents/openai.yaml",
+      "sha256": "5b0d5a8de083197498f01a73b0dfcd73b3da29700ac2d5c72214158e14c95a74"
+    },
+    {
+      "path": "skills/hi-use/SKILL.md",
+      "sha256": "1540138e2ba08a589e6bf770048f1a0aa5bd495b7596b7d196beb77bac79092c"
+    }
+  ]
+}

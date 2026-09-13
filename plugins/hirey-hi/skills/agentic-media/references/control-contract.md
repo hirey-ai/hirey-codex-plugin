@@ -10,14 +10,18 @@ awaiting_upload -> uploading -> processing? -> preview_ready
 preview_ready -> private (stop) | frozen(unlisted/public) -> published -> withdrawn
 ```
 
-`processing` is required for `raw_source` and skipped for `final_master`. Cancellation is allowed
+`processing` is required for `raw_source` and skipped for `final_master` and `evidence`. Evidence is
+always private and stops at `preview_ready`. Cancellation is allowed
 before publication. Failure and unknown outcome remain explicit terminal/recovery states.
 
 ## Source and integrity
 
-- Source is a user-local regular video or a stable HiRey canonical media ref.
+- Source is a user-local regular video, a supported raster image for `evidence`, or a stable HiRey
+  canonical media ref.
 - `raw_source` invokes the existing edit flow; this Skill never implements an editor.
 - `final_master` keeps `source_asset_id == output_asset_id` and requires `no_edit_verified=true`.
+- `evidence` keeps the original private and returns one canonical media asset for a calling workflow;
+  it never enters release or publication.
 - Work creation binds filename, MIME type, size, whole-file SHA-256, intent, Person, Workspace,
   current Agent Session, original task ref, and idempotency key.
 - Completion is valid only when every exact part exists and assembled size/SHA-256 match the work.

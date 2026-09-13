@@ -1,4 +1,4 @@
 interface:
   display_name: "Hi Repair"
   short_description: "Root-cause-first repairs with scoped grants"
-  default_prompt: "Use $hi-repair to process at most one eligible Repair Case, stop at a reviewable PR, and report anything requiring Walter."
+  default_prompt: "Use $hi-repair to process one eligible Repair Case within its current grant and report the reviewable PR or blocker."

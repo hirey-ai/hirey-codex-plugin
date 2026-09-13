@@ -1,6 +1,6 @@
 {
   "name": "hirey-hi",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "Hirey Hi for Codex — use the existing HiRey Person, Workspace, Moment, Page, Need, People, Message and Meeting workflows through the hosted MCP service.",
   "author": {
     "name": "Hirey",
@@ -21,8 +21,8 @@
       "MCP"
     ],
     "defaultPrompt": [
-      "Start Hi with `hi_agent_status` using version 0.2.12. Follow `hi-onboard` for update, login, or credential recovery.",
-      "For a local video, use Agentic Media: choose edit or no-edit, resume upload, preview, then confirm HiRey publication.",
+      "Start Hi with `hi_agent_status` using version 0.2.13. Follow `hi-onboard` for update, login, or credential recovery.",
+      "For bug evidence, privately upload original images/videos and attach their media IDs; never publish or upload duplicates.",
       "Use `workspace_workflows` and its live catalog. Anonymous access stays bounded; private Workspace work requires login."
     ],
     "brandColor": "#2563EB"

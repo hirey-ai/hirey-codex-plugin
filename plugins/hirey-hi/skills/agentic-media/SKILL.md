@@ -1,24 +1,26 @@
 ---
 name: agentic-media
-description: Let a user hand a local video to Codex, choose edit or no-edit once, upload it resumably to HiRey, review the private result, and keep it private or publish it to a Profile/unlisted video link.
+description: Privately upload original image/video evidence, or let a user prepare and optionally publish a local video, through HiRey's resumable media path.
 ---
 
 # Agentic Media
 
-Use this Skill when the user gives Codex a local video or asks to continue an Agentic Media work.
+Use this Skill when the user gives Codex a local image/video that another Hi workflow must preserve,
+or asks to continue an Agentic Media work.
 This version covers only the first four product steps: receive, prepare, preview, and publish/share on
 HiRey. Social-platform OAuth and posting are a later phase and must not be offered as available.
 
-Start with `hi_agent_status({"client_plugin_version":"0.2.12"})`, then call
+Start with `hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.13"})`, then call
 `workspace_workflows` with `action: catalog`. Read
 [references/control-contract.md](references/control-contract.md) before moving bytes.
 
 ## One user-facing entry
 
-The user should only need to hand the file to Codex. Resolve the source as a local regular video,
-then ask one question only when necessary: should HiRey edit it (`raw_source`) or preserve it exactly
-as the finished video (`final_master`)? Do not ask about internal tables, workers, storage, MCP calls,
-part sizes, or cover generation.
+The user should only need to hand the file to Codex. When another Skill, such as `hi-repair`, needs
+the original only as private evidence, use `evidence` and do not ask an edit/publication question.
+Otherwise resolve a local regular video, then ask one question only when necessary: should HiRey edit
+it (`raw_source`) or preserve it exactly as the finished video (`final_master`)? Do not ask about
+internal tables, workers, storage, MCP calls, part sizes, or cover generation.
 
 Reject remote watch/share URLs and every scraping or URL-to-file workaround. A stable existing HiRey
 media reference may move only through a live catalog-described Core copy operation.
@@ -32,6 +34,7 @@ used by the requested flow:
 - `agentic_media.upload.describe`
 - `agentic_media.upload.complete`
 - `agentic_media.upload.cancel`
+- `agentic_media.work.list`
 - `agentic_media.work.status`
 - `agentic_media.work.revise` for `raw_source` changes only
 - `agentic_media.release.freeze`
@@ -42,33 +45,22 @@ Stop with `contract_not_describable` if an operation, payload, result, confirmat
 idempotency rule, or limit is missing. The live service is authoritative; this list is routing
 guidance, not permission to invent a missing operation.
 
-For an existing installation whose first private-upload call returns `insufficient_oauth_scope`,
-reauthorize once with the exact union needed for the private upload and preview flow, not only the
-single scope returned by the failed call:
-
-- `hirey.f01.identity.me`
-- `hirey.f10.agentic_media.work.create`
-- `hirey.f10.agentic_media.upload.describe`
-- `hirey.f10.agentic_media.upload.complete`
-- `hirey.f10.agentic_media.work.status`
-
-Run `codex mcp login hi --scopes <the comma-separated union above>` yourself, let the user approve
-the normal browser page, then continue in a fresh Codex process. An explicit OAuth scope request
-replaces the current access token's usable scope set, so a singleton repair can make the next step
-fail even though client registration retained earlier scopes. Do not request cancel, revise,
-freeze, publish, withdraw, or unrelated catalog scopes before the user actually asks for that action.
-
 ## Upload the local file
 
-Require `agentic_media.work.create` describe to return `transport_policy` with accepted suffixes,
-maximum bytes, default/minimum/maximum part sizes, maximum parts, and explicit quota enforcement.
-Run `scripts/agentic_media_upload.py preflight` using those live values. When quota enforcement is
+Require `agentic_media.work.create` describe to return `transport_policy` with
+`accepted_suffixes_by_intent`, maximum bytes, default/minimum/maximum part sizes, maximum parts, and
+explicit quota enforcement. Select only the suffix list for the exact requested intent; never let an
+`evidence` image broaden `raw_source` or `final_master` video input. Run
+`scripts/agentic_media_upload.py preflight` using those live values. When quota enforcement is
 false use `--quota-unlimited`; when it is true require a numeric remaining-byte value and use
 `--quota-remaining-bytes`. Stop with `contract_not_describable` if either policy is incomplete.
 Compute the whole-file SHA-256 before `agentic_media.work.create`; send the filename, MIME type, byte
 size, digest, title, exact intent, original task ref, and a stable idempotency key.
 
 Save only stable work/upload refs plus safe local file identity in the helper's mode-0600 state file.
+When the local state file is missing or the user asks to continue an earlier upload, call
+`agentic_media.work.list` first and let the user identify the returned work by its safe title,
+filename, state and progress. Never guess or reconstruct a work ID from a filename.
 Call `agentic_media.upload.describe` immediately before uploading. Pass that fresh result to the
 helper's `upload` command; its short-lived URLs and `x-hi-upload-capability` headers stay in memory
 only. Never display, log, or persist them. On timeout, restart, or unknown part outcome, describe
@@ -86,6 +78,10 @@ processing attempt; do not rebuild or imitate the editor locally.
 For `final_master`, the uploaded video must remain the output video byte-for-byte. The service may
 inspect it and derive a cover/playback presentation, but must return `no_edit_verified=true`. Never
 call revise for this intent.
+
+For `evidence`, the uploaded image/video remains private, skips editing and publication, and completes
+at `preview_ready`. Return its canonical `media_asset_id` to the calling workflow. Do not call revise,
+freeze, publish, or withdraw, and do not expose a storage locator.
 
 ## Preview, visibility, and publish
 

@@ -25,7 +25,12 @@ import urllib.error
 import urllib.request
 
 
-INTENTS = frozenset({"raw_source", "final_master"})
+INTENTS = frozenset({"raw_source", "final_master", "evidence"})
+EVIDENCE_IMAGE_MIME_BY_SUFFIX = {
+    ".avif": "image/avif", ".gif": "image/gif", ".heic": "image/heic",
+    ".heif": "image/heif", ".jpeg": "image/jpeg", ".jpg": "image/jpeg",
+    ".png": "image/png", ".webp": "image/webp",
+}
 SOURCE_KINDS = frozenset({"local_file", "hirey_canonical_media"})
 SESSION_STATUSES = frozenset({
     "ready", "uploading", "paused", "cancel_requested",
@@ -82,7 +87,7 @@ def _nonnegative(value: Any, field: str) -> int:
 def validate_intent(intent: str) -> str:
     value = str(intent or "").strip()
     if value not in INTENTS:
-        raise UploadError("invalid_intent", "intent must be raw_source or final_master")
+        raise UploadError("invalid_intent", "intent must be raw_source, final_master, or evidence")
     return value
 
 
@@ -94,6 +99,28 @@ def _video_signature(path: Path) -> str:
     if head.startswith(b"\x1aE\xdf\xa3"):
         return "webm"
     raise UploadError("unsupported_video_format", "file header is not a supported video container")
+
+
+def _image_signature(path: Path, mime_type: str) -> str:
+    with path.open("rb") as source:
+        head = source.read(64)
+    brand = head[8:12] if len(head) >= 12 and head[4:8] == b"ftyp" else b""
+    iso_image_brands = {
+        "image/avif": {b"avif", b"avis"},
+        "image/heic": {b"heic", b"heix", b"hevc", b"hevx"},
+        "image/heif": {b"mif1", b"msf1", b"heif"},
+    }
+    matched = (
+        (mime_type == "image/jpeg" and head.startswith(b"\xff\xd8\xff"))
+        or (mime_type == "image/png" and head.startswith(b"\x89PNG\r\n\x1a\n"))
+        or (mime_type == "image/gif" and head.startswith((b"GIF87a", b"GIF89a")))
+        or (mime_type == "image/webp" and len(head) >= 12
+            and head[:4] == b"RIFF" and head[8:12] == b"WEBP")
+        or (mime_type in iso_image_brands and brand in iso_image_brands[mime_type])
+    )
+    if not matched:
+        raise UploadError("unsupported_image_format", "file header does not match the image type")
+    return mime_type.split("/", 1)[1]
 
 
 def describe_local_source(path: str | os.PathLike[str]) -> dict[str, Any]:
@@ -152,7 +179,18 @@ def preflight_local_file(
     suffix = Path(source["name"]).suffix.lower()
     if suffix not in allowed:
         raise UploadError("unsupported_video_format", "file extension is not allowed by the live contract")
-    signature = _video_signature(Path(source["path"]))
+    mime_type = mimetypes.guess_type(source["name"])[0]
+    if checked_intent == "evidence" and suffix in EVIDENCE_IMAGE_MIME_BY_SUFFIX:
+        mime_type = EVIDENCE_IMAGE_MIME_BY_SUFFIX[suffix]
+        signature = _image_signature(Path(source["path"]), mime_type)
+    else:
+        mime_type = mime_type or "application/octet-stream"
+        if not mime_type.startswith("video/"):
+            raise UploadError(
+                "unsupported_media_format",
+                "raw_source/final_master require video; evidence accepts supported images or video",
+            )
+        signature = _video_signature(Path(source["path"]))
     if source["size"] > maximum:
         raise UploadError("upload_too_large", "file exceeds the live contract maximum")
     if quota is not None and source["size"] > quota:
@@ -160,7 +198,6 @@ def preflight_local_file(
     count = (source["size"] + chunk - 1) // chunk
     if count > part_limit:
         raise UploadError("too_many_parts", "multipart plan exceeds the live contract part limit")
-    mime_type = mimetypes.guess_type(source["name"])[0] or "application/octet-stream"
     return {
         "ok": True, "intent": checked_intent, "source": source,
         "container": signature, "mime_type": mime_type,
