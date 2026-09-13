@@ -8,16 +8,28 @@ The official Codex marketplace for [Hirey Hi](https://hi.hirey.ai).
 codex plugin marketplace add hirey-ai/hirey-codex-plugin
 ```
 
-Then install and enable `hirey-hi` in `/plugins`, run `codex mcp login hi`, complete the browser
-OAuth flow, and fully restart Codex. The plugin connects to the hosted MCP endpoint at
-`https://mcp.hirey.ai/mcp`; it does not install an npm package or local daemon.
+Then install and enable `hirey-hi` in `/plugins`, run `codex mcp login hi`, and complete the browser
+OAuth flow. The plugin connects to the hosted MCP endpoint at `https://mcp.hirey.ai/mcp`; it does not
+install an npm package or local daemon. The bundled `hi-onboard` skill is the canonical connect and
+recovery procedure; the notes below summarize it.
 
-If a previous install returns `401 invalid_token`, update the plugin first. Its `hi-onboard` skill
-will remove an invalid manual Bearer override when present, run the normal Codex OAuth login, and
-require one full restart before retrying the original request. It never replaces a broken signed-in
-credential with a new anonymous identity.
+A missing tool after an actual install or update can follow a host loading or auth startup failure. It
+is not proof of anything about credential validity: inspect the host loading state, do a supported
+reload or start a new Codex session, and verify the tools again. Restart the full Codex application
+only if a tool is still missing after that, with the concrete remaining error as evidence.
 
-After the restart, verify that `workspace_workflows` is available and call it with
+If a previous install returns `401 invalid_token`, follow the credential recovery in `hi-onboard`:
+report the exact error, keep saved OAuth credentials, never log out first, and run the normal Codex
+OAuth login; it never claims the saved credential is definitely invalid. Update the plugin only when
+the version policy actually says an update is needed. The skill's read-only preflight checks
+configuration structure only, not token validity: it may remove a URL-only duplicate
+(`legacy_url_only_override`, no auth header) as an authorized connection repair, while a
+`review_required` entry (manual `Authorization` header, custom endpoint, restriction or disabled
+setting) is preserved unless a separate concrete invalid-override diagnosis justifies removing
+exactly that override. Credential errors and failed refreshes need the normal login, not a blanket
+restart. It never replaces a broken signed-in credential with a new anonymous identity.
+
+Once the tools are loaded, verify that `workspace_workflows` is available and call it with
 `action: catalog`. The live catalog is authoritative for the existing Person, Workspace, Moment,
 Page, Need, People, Message, Meeting, Product Signal, and Repair operations.
 

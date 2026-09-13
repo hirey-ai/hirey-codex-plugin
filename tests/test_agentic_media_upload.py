@@ -31,6 +31,11 @@ class AgenticMediaUploadTests(unittest.TestCase):
         path.write_bytes(b"\x00\x00\x00\x18ftypisom" + b"0" * max(0, size - 12))
         return path
 
+    def image(self, name="evidence.png"):
+        path = self.root / name
+        path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"image-evidence")
+        return path
+
     def state(self, **changes):
         source = media.describe_local_source(self.video())
         values = media.new_session_state(
@@ -52,8 +57,49 @@ class AgenticMediaUploadTests(unittest.TestCase):
     def test_intent_is_exact(self):
         self.assertEqual(media.validate_intent("raw_source"), "raw_source")
         self.assertEqual(media.validate_intent("final_master"), "final_master")
-        for invalid in ("raw", "final", "RAW_SOURCE", "raw-source", ""):
+        self.assertEqual(media.validate_intent("evidence"), "evidence")
+        for invalid in ("raw", "final", "attachment", "RAW_SOURCE", "raw-source", ""):
             self.assert_code("invalid_intent", lambda value=invalid: media.validate_intent(value))
+
+    def test_private_evidence_accepts_images_but_video_intents_do_not(self):
+        path = self.image()
+        result = media.preflight_local_file(
+            path,
+            intent="evidence",
+            allowed_suffixes=[".png", ".mp4"],
+            max_bytes=100,
+            quota_remaining_bytes=100,
+            part_size=16,
+            max_parts=10,
+        )
+        self.assertEqual(result["mime_type"], "image/png")
+        self.assertEqual(result["container"], "png")
+        self.assert_code(
+            "unsupported_media_format",
+            lambda: media.preflight_local_file(
+                path,
+                intent="final_master",
+                allowed_suffixes=[".png"],
+                max_bytes=100,
+                quota_remaining_bytes=100,
+                part_size=16,
+                max_parts=10,
+            ),
+        )
+        disguised = self.root / "disguised.png"
+        disguised.write_bytes(b"not-a-png")
+        self.assert_code(
+            "unsupported_image_format",
+            lambda: media.preflight_local_file(
+                disguised,
+                intent="evidence",
+                allowed_suffixes=[".png"],
+                max_bytes=100,
+                quota_remaining_bytes=100,
+                part_size=16,
+                max_parts=10,
+            ),
+        )
 
     def test_preflight_uses_live_limits_and_fails_closed(self):
         path = self.video()
