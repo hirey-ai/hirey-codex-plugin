@@ -17,13 +17,13 @@
       "version": "v1"
     },
     "plugin": "0.2.13",
-    "publicLatest": "0.2.12",
+    "publicLatest": "0.2.13",
     "minimumSupported": "0.2.9",
     "packageState": "candidate"
   },
   "output_root": "host-plugins/plugins/hirey-hi",
-  "source_content_digest": "sha256:08bb4d8d64ff789477fea008b99cebf439ac12a80edc1f86b5c6719fc357a928",
-  "package_digest": "sha256:f05fd6d2690e8851af19b8886f055c0bce9a6529c0903ff3a3255a49b11645d7",
+  "source_content_digest": "sha256:ad6bc95b2d02e8746e1dfe0619938c469d545f826eca077597341f7110eb24be",
+  "package_digest": "sha256:da0f8c813e5ae399a8dbd86f0d060d3670f4c3ccf206b7413b98556a6c8767d3",
   "files": [
     {
       "path": ".codex-plugin/plugin.json",
@@ -51,7 +51,7 @@
     },
     {
       "path": "skills/hi-events/SKILL.md",
-      "sha256": "ff576aca58a711a07f466c531d29ea76068a7ad8394610d62412b24db3efaa00"
+      "sha256": "127517a8b513684f0ddb3d6bfbe448e52947e069d5e58a35c80ced20085d9c6a"
     },
     {
       "path": "skills/hi-onboard/SKILL.md",
