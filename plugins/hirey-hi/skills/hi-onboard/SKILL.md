@@ -33,7 +33,7 @@ installation has no callable CLI and stop without changing the Hi configuration.
    out first: keep saved OAuth credentials unless repair of a `legacy_url_only_override` is needed
    (see Recovery).
 3. Verify that `hi_agent_status` and `workspace_workflows` are present. Then call `hi_agent_status`
-   with `client_plugin_version: "0.2.13"`, call `workspace_workflows` with
+   with `client_plugin_version: "0.2.14"`, call `workspace_workflows` with
    `action: catalog`, and retry the original bounded operation once.
 4. If a tool is still missing after an actual install or update, reload or start a new Codex session
    (because Codex reloads Skills only in a new session) and verify the tools again; escalate to a full Codex application restart only if a
@@ -80,7 +80,7 @@ For `invalid_token`, `missing_bearer`, or a failed OAuth refresh:
    verified existing scope set plus the required scopes when that evidence is available; otherwise
    read the normal consent/status evidence rather than tokens, keychain entries, or broad grants.
    Do not assume the same DCR client or session survives CLI login.
-4. Call `hi_agent_status` with version `0.2.13`, call `workspace_workflows` with
+4. Call `hi_agent_status` with version `0.2.14`, call `workspace_workflows` with
    `action: catalog`, and retry the original bounded operation once.
 5. If the same turn is still stale, let the next user turn or a runtime refresh occur, then retry
    once. One synthetic verification observed a next-user-turn success on Codex 0.153.4; that is
@@ -97,6 +97,17 @@ Do not use `/v1/agents/api-keys` for this recovery. That endpoint is only for a 
 chooses anonymous API-key access; it must not replace or mask an expired signed-in credential.
 
 ## Version check and upgrade
+
+### Show server update notices
+
+On connection or the first Hi use, relay a server-provided `plugin.update_notice`
+in the user's language once per `notice_id` in the current conversation. Remember
+that notice in conversation context; do not repeat it on every tool result.
+Continue compatible work. Offer to update using this skill only with user
+instruction or existing applicable authorization; do not ask again for the same
+permission. An update hint never authorizes business actions or an OAuth reset.
+After updating, distinguish installed files from the version loaded in this
+session and use the existing reload and ordinary-read verification steps below.
 
 ### Configuration preflight
 
