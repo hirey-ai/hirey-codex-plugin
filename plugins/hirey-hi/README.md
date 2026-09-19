@@ -16,7 +16,7 @@ manually managed API key.
    browser OAuth page and never needs to type a `codex` command. Saved OAuth credentials are kept;
    only a `legacy_url_only_override` is removed as an authorized connection repair.
 3. Verify `hi_agent_status` and `workspace_workflows` are present, then call `hi_agent_status` with
-   `client_plugin_version: "0.2.14"` and `workspace_workflows` with
+   `client_plugin_version: "0.2.15"` and `workspace_workflows` with
    `action: catalog`. A missing tool after an actual install or update can follow a host loading or
    auth startup failure; it is not proof of anything about credential validity. Inspect the host
    loading state and do a supported reload or start a new Codex session first, then verify the tools

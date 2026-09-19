@@ -10,7 +10,7 @@ or asks to continue an Agentic Media work.
 This version covers only the first four product steps: receive, prepare, preview, and publish/share on
 HiRey. Social-platform OAuth and posting are a later phase and must not be offered as available.
 
-Start with `hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.14"})`, then call
+Start with `hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.15"})`, then call
 `workspace_workflows` with `action: catalog`. Read
 [references/control-contract.md](references/control-contract.md) before moving bytes.
 

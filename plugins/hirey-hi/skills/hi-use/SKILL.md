@@ -9,7 +9,7 @@ Hi exposes one MCP tool, `workspace_workflows`. Its `action: catalog` result is 
 for the existing operations, their purpose, write behavior, and confirmation requirement.
 
 Before the first Hi business call in a new session, call
-`hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.14"})`. Follow its plugin policy and authentication
+`hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.15"})`. Follow its plugin policy and authentication
 state through the existing server rules. Package versions are diagnostic: report update hints without
 blocking an otherwise compatible, authorized business call. Use the host reference when an actual
 package update or reload is needed; protocol and business permission errors remain enforced.
