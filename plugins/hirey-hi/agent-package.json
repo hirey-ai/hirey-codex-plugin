@@ -22,7 +22,7 @@
     "packageState": "candidate"
   },
   "output_root": "host-plugins/plugins/hirey-hi",
-  "source_content_digest": "sha256:82322e821d99511c5b36c259ef7122cdc8fc92060ecdabfb68e73432892447f3",
+  "source_content_digest": "sha256:a5cb4a2fa02bece6249a5ddf5eb1bab76ce9cdff66f18a3f9866b548fa3e9bde",
   "package_digest": "sha256:29f909704b0f16dd79c4afb0f0e19b58e73bb5e3a6e927e74b6a3f189efcb9ad",
   "files": [
     {
