@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import hashlib
 from pathlib import Path
 import unittest
 
@@ -8,17 +9,24 @@ spec = importlib.util.spec_from_file_location("conflict", path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 PLUGIN = {"mcpServers": {"hi": {"url": "https://mcp.hirey.ai/mcp",
-          "http_headers": {"x-hirey-plugin-host": "codex", "x-hirey-plugin-version": "0.2.14"}}}}
+          "http_headers": {"x-hirey-plugin-host": "codex", "x-hirey-plugin-version": "0.2.15"}}}}
 
 
 class ConflictTests(unittest.TestCase):
+    def test_installed_package_files_match_release_manifest(self):
+        root = Path(__file__).resolve().parents[1] / "plugins/hirey-hi"
+        package = json.loads((root / "agent-package.json").read_text(encoding="utf-8"))
+        for item in package["files"]:
+            with self.subTest(path=item["path"]):
+                self.assertEqual(hashlib.sha256((root / item["path"]).read_bytes()).hexdigest(), item["sha256"])
+
     def test_codex_manifest_prompt_budget_and_agentic_media_entry(self):
         manifest_path = Path(__file__).resolve().parents[1] / "plugins/hirey-hi/.codex-plugin/plugin.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         prompts = manifest["interface"]["defaultPrompt"]
         self.assertLessEqual(len(prompts), 3)
         self.assertTrue(all(len(prompt) <= 128 for prompt in prompts))
-        self.assertEqual(manifest["version"], "0.2.14")
+        self.assertEqual(manifest["version"], "0.2.15")
         self.assertTrue(any("bug evidence" in prompt.lower() for prompt in prompts))
 
     def test_agentic_media_requires_live_evidence_contract(self):

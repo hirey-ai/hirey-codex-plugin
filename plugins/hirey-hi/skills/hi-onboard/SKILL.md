@@ -33,7 +33,7 @@ installation has no callable CLI and stop without changing the Hi configuration.
    out first: keep saved OAuth credentials unless repair of a `legacy_url_only_override` is needed
    (see Recovery).
 3. Verify that `hi_agent_status` and `workspace_workflows` are present. Then call `hi_agent_status`
-   with `client_plugin_version: "0.2.14"`, call `workspace_workflows` with
+   with `client_plugin_version: "0.2.15"`, call `workspace_workflows` with
    `action: catalog`, and retry the original bounded operation once.
 4. If a tool is still missing after an actual install or update, reload or start a new Codex session
    (because Codex reloads Skills only in a new session) and verify the tools again; escalate to a full Codex application restart only if a
@@ -80,7 +80,7 @@ For `invalid_token`, `missing_bearer`, or a failed OAuth refresh:
    verified existing scope set plus the required scopes when that evidence is available; otherwise
    read the normal consent/status evidence rather than tokens, keychain entries, or broad grants.
    Do not assume the same DCR client or session survives CLI login.
-4. Call `hi_agent_status` with version `0.2.14`, call `workspace_workflows` with
+4. Call `hi_agent_status` with version `0.2.15`, call `workspace_workflows` with
    `action: catalog`, and retry the original bounded operation once.
 5. If the same turn is still stale, let the next user turn or a runtime refresh occur, then retry
    once. One synthetic verification observed a next-user-turn success on Codex 0.153.4; that is
