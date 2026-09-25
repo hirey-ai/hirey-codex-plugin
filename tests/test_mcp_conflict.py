@@ -9,7 +9,7 @@ spec = importlib.util.spec_from_file_location("conflict", path)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 PLUGIN = {"mcpServers": {"hi": {"url": "https://mcp.hirey.ai/mcp",
-          "http_headers": {"x-hirey-plugin-host": "codex", "x-hirey-plugin-version": "0.2.16"}}}}
+          "http_headers": {"x-hirey-plugin-host": "codex", "x-hirey-plugin-version": "0.2.18"}}}}
 
 
 class ConflictTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class ConflictTests(unittest.TestCase):
         prompts = manifest["interface"]["defaultPrompt"]
         self.assertLessEqual(len(prompts), 3)
         self.assertTrue(all(len(prompt) <= 128 for prompt in prompts))
-        self.assertEqual(manifest["version"], "0.2.16")
+        self.assertEqual(manifest["version"], "0.2.18")
         self.assertTrue(any("bug evidence" in prompt.lower() for prompt in prompts))
 
     def test_agentic_media_requires_live_evidence_contract(self):

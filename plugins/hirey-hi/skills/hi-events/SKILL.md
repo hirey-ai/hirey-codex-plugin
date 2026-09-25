@@ -57,6 +57,20 @@ Session, so no target instance field is passed; if the call returns `instance_bi
 bind first with the `hi-instance` skill and then read. Optional payload fields are `unread_only`,
 `cursor` and `limit` (1–100). `private_handoff.sent` lists what this instance already sent.
 
+Every instance-directed handoff call also carries a fresh instance signature; a bound Agent Session
+alone is not device proof, because a copied OAuth credential carries the same Session. Before each
+call, issue a one-time challenge with `agent_instance.proof.begin` and payload
+`{idempotency_key, operation: "<the exact handoff operation>", parameters: {<the exact business
+fields of that call>}}`, write the returned `challenge_text` to a private temporary file byte for
+byte, sign it with this identity's profile (`python3 scripts/hi_instance.py sign --host codex
+--profile <profile_key> --challenge-file <path>` from the `hi-instance` skill), and pass the
+returned `{challenge_id, signature}` as the call's `proof` field. The challenge is one-time and
+short-lived: use a new one for every call, including a retry. To retry a write whose response was
+lost, keep its `idempotency_key` and sign a fresh challenge; the server replays the committed receipt
+for that key, while an already-consumed proof is refused. A missing proof returns
+`instance_proof_required`; a copied Bearer that cannot sign the challenge stays unable to read or
+acknowledge this instance's notes.
+
 Read and present every returned note's `body_text` in full, with its sender's readable instance
 name and its timestamps, **before** calling `private_handoff.mark_read` with that exact
 `handoff_id`. Never mark a note read to make the list quiet, never mark a batch read that was not
