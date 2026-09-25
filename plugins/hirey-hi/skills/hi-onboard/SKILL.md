@@ -33,7 +33,7 @@ installation has no callable CLI and stop without changing the Hi configuration.
    out first: keep saved OAuth credentials unless repair of a `legacy_url_only_override` is needed
    (see Recovery).
 3. Verify that `hi_agent_status` and `workspace_workflows` are present. Then call `hi_agent_status`
-   with `client_plugin_version: "0.2.16"`, call `workspace_workflows` with
+   with `client_plugin_version: "0.2.18"`, call `workspace_workflows` with
    `action: catalog`, and retry the original bounded operation once.
 4. If a tool is still missing after an actual install or update, reload or start a new Codex session
    (because Codex reloads Skills only in a new session) and verify the tools again; escalate to a full Codex application restart only if a
@@ -48,6 +48,28 @@ package, a stable `hi_ak_` key, or an invented installation endpoint.
 Authentication establishes the Account, Person, Workspace, Agent, and Agent Session used by Core.
 Anonymous browsing may create a pending Agent at the Gateway, but it does not create a permanent
 anonymous Person and it is not a replacement for OAuth when private Workspace data is needed.
+
+## Bind on the first authenticated connection
+
+After OAuth completes and the tools are verified, bind this installation as part of the connection
+instead of waiting for a later instance-directed action. A fresh Agent must start on the new
+per-identity instance mechanism:
+
+1. Run the `hi-instance` helper's bare `status --host codex` to obtain the stable
+   `installation_ref`. It creates the installation record but no key pair.
+2. Call `agent_instance.current` with `{local_instance_ref: <installation_ref>}`. If it reports
+   `binding_status: "bound"`, this Agent Session is already bound; continue.
+3. When it reports `instance_binding_required`, complete the `hi-instance` first-bind flow:
+   `status --profile <profile_key> --confirmed-fingerprint <existing_public_key_fingerprint>` (omit
+   the flag for a null fingerprint), `agent_instance.binding.begin`, sign the exact challenge,
+   `agent_instance.binding.finish`, then `record` the returned instance id.
+4. Report the instance `agent_instance.current` returns now, not a remembered one. Ordinary Hi work
+   stays available even if binding cannot complete; a binding failure is an unbound instance, not an
+   invalid credential.
+
+This skill is the deterministic trigger available to the host. A host runtime that never runs its
+onboarding skill after OAuth has no automatic post-login hook, so its first bind still happens on the
+first instance-directed action; never claim an automatic first-login bind for such a host.
 
 ## Recover an expired or invalid credential
 
@@ -80,7 +102,7 @@ For `invalid_token`, `missing_bearer`, or a failed OAuth refresh:
    verified existing scope set plus the required scopes when that evidence is available; otherwise
    read the normal consent/status evidence rather than tokens, keychain entries, or broad grants.
    Do not assume the same DCR client or session survives CLI login.
-4. Call `hi_agent_status` with version `0.2.16`, call `workspace_workflows` with
+4. Call `hi_agent_status` with version `0.2.18`, call `workspace_workflows` with
    `action: catalog`, and retry the original bounded operation once.
 5. If the same turn is still stale, let the next user turn or a runtime refresh occur, then retry
    once. One synthetic verification observed a next-user-turn success on Codex 0.153.4; that is
@@ -173,13 +195,25 @@ and `marketplace upgrade` preserves that pin instead of installing the current r
 
 ## Local instance
 
-This package ships the `hi-instance` skill. When a Hi call answers `instance_binding_required`, or
-when the user asks which computer this Codex installation is running on, use it: run
-`python3 scripts/hi_instance.py status --host codex` from that skill's directory and follow its
-bind flow. The key pair is kept outside this plugin's version cache, so updating, reinstalling or
-re-authorizing the plugin does not change this installation's instance; only an explicit `forget`,
-a wiped user data directory or a new computer creates a new one. The reported display name is only a
-label — the instance identity is the key pair.
+This package ships the `hi-instance` skill. `hi_agent_status` is the read-only, typed entry point
+for local instance state: pass the helper's stable `installation_ref` as `local_instance_ref` and
+read `instance_status`, `profile_key` and `existing_public_key_fingerprint` from its answer.
+`instance_status` is `bound`, `instance_binding_required` or `lookup_unavailable`; only the middle
+state starts a bind, and `lookup_unavailable` is a diagnostic that is never an unbound identity or
+a credential failure. When a Hi call answers `instance_binding_required`, or when the user asks
+which computer this Codex installation is running on, use the `hi-instance` skill: read the
+verified `profile_key` and the server-confirmed `existing_public_key_fingerprint` for the local
+`installation_ref`, then run `python3 scripts/hi_instance.py status --host codex --profile
+<profile_key>` from that skill's directory. Add `--confirmed-fingerprint
+<existing_public_key_fingerprint>` only when the server returned a non-null fingerprint; omit the
+flag for a new identity. Follow the skill's bind flow. The installation keeps one stable audit reference, and each verified
+Person and logical Agent gets its own key pair outside this plugin's version cache, so updating,
+reinstalling or re-authorizing the plugin keeps the profile and switching Person never shares a
+key. Recover an `instance_key_mismatch` or `instance_revoked` refusal with the helper's `recover`
+plus the explicit `agent_instance.recovery.begin` route, never by forgetting the whole installation.
+Only an explicit `forget` of the whole installation, a wiped user data directory or a new computer
+rotates the reference. The reported display name is only a label — the instance identity is the key
+pair, and the reference is not proof of a physical machine.
 
 ## Connection surface
 

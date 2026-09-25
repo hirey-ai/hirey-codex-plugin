@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
-"""Local Hi host-instance helper: one Ed25519 key pair per host per computer.
+"""Local Hi host-instance helper: one key pair per verified (Person, Agent).
 
 The MCP control plane stays outside this module.  Hi separates *which Person and
 Agent* may act (the OAuth Agent Session) from *which end of the user's work* is
 calling (one local instance key pair).  This helper owns only the local half:
 
-* it keeps one instance file per host type outside every plugin version cache,
-  so a plugin upgrade, an uninstall/reinstall, an OAuth re-login and a brand-new
-  Task all reuse the same instance;
+* one host installation keeps one stable, random ``local_instance_ref`` that is
+  an audit clue only: it ties successive uses of the same installation together,
+  but is never proof of physical hardware, of Person identity, or of any
+  cross-Person authority;
+* inside that installation it keeps one isolated profile per verified
+  (Person, logical Agent), each with its own Ed25519 key pair, so one
+  installation switching Person A -> B -> A keeps two separate server instances
+  and restores A's original identity on return;
+* profile names are the server's opaque ``profile_key`` digest, never a name or
+  an email, and the helper never trusts a local profile field as server
+  authority;
+* a legacy single-key ``instance.json`` written by an older helper is read and
+  preserved, and its key is migrated lazily into the first profile;
 * it never prints, returns or logs the private key;
 * it signs the exact server-issued challenge bytes read from a file, never from
   argv, so the challenge can never be truncated or re-quoted by a shell.
@@ -28,6 +38,7 @@ import json
 import os
 import platform
 import random
+import re
 import shutil
 import subprocess
 import sys
@@ -38,9 +49,13 @@ from typing import Any, Mapping, Optional
 
 # --- Frozen local contract -------------------------------------------------
 
-# The on-disk format of the instance file.  A future shape must use a new number
-# so an old helper never half-reads a newer file.
-FORMAT_VERSION = 1
+# The on-disk format of the installation and profile files.  A future shape must
+# use a new number so an old helper never half-reads a newer file.
+FORMAT_VERSION = 2
+
+# A legacy single-key instance file from the previous helper is readable, never
+# rewritten, so an upgrade preserves its key and server instance.
+LEGACY_FORMAT_VERSION = 1
 
 # Host types the server accepts for ``agent_instance.binding.begin.host_type``.
 HOST_TYPES = ("codex", "claude", "hermes", "openclaw", "generic")
@@ -57,8 +72,32 @@ HOST_LABELS = {
 # A neutral label used when the operating system will not name the computer.
 NEUTRAL_COMPUTER_NAME = "This computer"
 
-INSTANCE_FILE_NAME = "instance.json"
+INSTALLATION_FILE_NAME = "installation.json"
+PROFILES_DIR_NAME = "profiles"
+LEGACY_INSTANCE_FILE_NAME = "instance.json"
 LOCK_FILE_NAME = "instance.lock"
+
+# The three legacy-status values an installation can carry.  "unclaimed" means a
+# legacy key exists and no profile has inherited it yet; inheriting it marks the
+# installation "claimed" so a second Person on the same machine gets a fresh key;
+# "refused" records that the migrated key was rejected by the server as already
+# bound elsewhere, so no later profile may inherit it.
+LEGACY_ABSENT = "absent"
+LEGACY_UNCLAIMED = "unclaimed"
+LEGACY_CLAIMED = "claimed"
+LEGACY_REFUSED = "refused"
+LEGACY_STATUSES = (LEGACY_ABSENT, LEGACY_UNCLAIMED, LEGACY_CLAIMED, LEGACY_REFUSED)
+
+# One installation ref is 16 random bytes rendered as 32 lowercase hex characters,
+# the same shape the previous single-file helper wrote.
+INSTALLATION_REF_LENGTH = 32
+
+# A per-identity profile key is the server's sha256 hex digest, used verbatim as
+# a filename and validated before any path join.
+PROFILE_KEY_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+# The server's instance identifier, recorded locally after a successful bind.
+INSTANCE_ID_PATTERN = re.compile(r"^agi_[a-z0-9_-]{12,64}$")
 
 # A first call that loses the initialization race waits for the winner instead of
 # creating a second key pair.  A lock older than the stale window belongs to a
@@ -76,6 +115,7 @@ EXIT_SIGNER_UNAVAILABLE = 3
 EXIT_STATE_INVALID = 4
 EXIT_CHALLENGE_UNREADABLE = 5
 EXIT_LOCK_TIMEOUT = 6
+EXIT_PROFILE_REQUIRED = 7
 
 # Ed25519 sizes: one private seed, one raw public key and one detached signature.
 SEED_BYTES = 32
@@ -221,8 +261,56 @@ def host_dir(host_type: str) -> str:
     return os.path.join(data_root(), validate_host_type(host_type))
 
 
+def installation_path(host_type: str) -> str:
+    """Return the absolute path of one host's installation record.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+
+    Returns:
+        ``<root>/<host_type>/installation.json``.
+    """
+
+    return os.path.join(host_dir(host_type), INSTALLATION_FILE_NAME)
+
+
+def profiles_dir(host_type: str) -> str:
+    """Return the absolute directory that holds one host's per-identity profiles.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+
+    Returns:
+        ``<root>/<host_type>/profiles``.
+    """
+
+    return os.path.join(host_dir(host_type), PROFILES_DIR_NAME)
+
+
+def profile_path(host_type: str, profile_key_value: str) -> str:
+    """Return the absolute path of one validated profile file.
+
+    The profile key is validated to the server's 64-hex digest before any path
+    join, so a caller-supplied value can never escape the profiles directory.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+        profile_key_value: The server-issued opaque profile key.
+
+    Returns:
+        ``<root>/<host_type>/profiles/<profile_key>.json``.
+    """
+
+    return os.path.join(profiles_dir(host_type),
+                        validate_profile_key(profile_key_value) + ".json")
+
+
 def instance_path(host_type: str) -> str:
-    """Return the absolute path of one host's instance file.
+    """Return the absolute path of one host's legacy instance file.
+
+    This is the file the previous single-key helper wrote.  It is read on upgrade
+    and preserved verbatim, never rewritten, so a rollback still finds the key it
+    left behind.
 
     Args:
         host_type: One of ``HOST_TYPES``.
@@ -231,7 +319,7 @@ def instance_path(host_type: str) -> str:
         ``<root>/<host_type>/instance.json``.
     """
 
-    return os.path.join(host_dir(host_type), INSTANCE_FILE_NAME)
+    return os.path.join(host_dir(host_type), LEGACY_INSTANCE_FILE_NAME)
 
 
 def lock_path(host_type: str) -> str:
@@ -265,6 +353,39 @@ def validate_host_type(value: str) -> str:
         raise InstanceError(
             "instance_host_type_invalid",
             "--host must be one of %s" % ", ".join(HOST_TYPES),
+            EXIT_USAGE,
+        )
+    return text
+
+
+def validate_profile_key(value: Any) -> str:
+    """Return one accepted profile key or fail closed.
+
+    Args:
+        value: The ``--profile`` argument, normally the server's opaque
+            ``profile_key`` for the verified (Person, logical Agent).
+
+    Returns:
+        The validated lowercase sha256 hex digest.
+
+    Raises:
+        InstanceError: With ``instance_profile_required`` when the value is
+            missing or malformed, so a caller never falls back to a guessed or
+            shared profile.
+    """
+
+    text = str(value or "").strip().lower()
+    if not text:
+        raise InstanceError(
+            "instance_profile_required",
+            "a verified profile key is required; call agent_instance.current and pass "
+            "its profile_key to --profile",
+            EXIT_PROFILE_REQUIRED,
+        )
+    if not PROFILE_KEY_PATTERN.match(text):
+        raise InstanceError(
+            "instance_profile_invalid",
+            "the profile key is not the server's 64-character hex digest",
             EXIT_USAGE,
         )
     return text
@@ -717,11 +838,75 @@ def _ensure_directory(path: str) -> None:
         pass
 
 
-def _validate_instance(payload: Mapping[str, Any], host_type: str) -> dict:
-    """Return a validated instance record or fail closed.
+def _json_file_payload(path: str, description: str) -> Optional[dict]:
+    """Read one small JSON object from disk, or return ``None`` when absent.
 
     Args:
-        payload: The parsed instance file.
+        path: The file to read.
+        description: Human-readable label used in a typed failure.
+
+    Returns:
+        The decoded object, or ``None`` when the file does not exist.
+
+    Raises:
+        InstanceError: With ``instance_state_invalid`` when the file is
+            unreadable or is not a JSON object.
+    """
+
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise InstanceError(
+            "instance_state_invalid",
+            "the local %s at %s is unreadable; run 'forget' and bind again" % (description, path),
+            EXIT_STATE_INVALID,
+        ) from exc
+    if not isinstance(payload, Mapping):
+        raise InstanceError(
+            "instance_state_invalid",
+            "the local %s at %s is not an object" % (description, path),
+            EXIT_STATE_INVALID,
+        )
+    return dict(payload)
+
+
+def _record_text(payload: Mapping[str, Any], key: str, description: str) -> str:
+    """Return one required non-empty string field of a local record, or fail closed.
+
+    Args:
+        payload: The parsed record.
+        key: The required field name.
+        description: Human-readable record label for the error message.
+
+    Returns:
+        The stripped field value.
+
+    Raises:
+        InstanceError: When the field is missing or empty.
+    """
+
+    value = str(payload.get(key) or "").strip()
+    if not value:
+        raise InstanceError("instance_state_invalid",
+                            "%s is missing %s" % (description, key), EXIT_STATE_INVALID)
+    return value
+
+
+def _valid_ref(value: str) -> bool:
+    """Return whether ``value`` is one canonical 32-character hex installation ref."""
+
+    return len(value) == INSTALLATION_REF_LENGTH and all(
+        character in "0123456789abcdef" for character in value)
+
+
+def _validate_installation(payload: Mapping[str, Any], host_type: str) -> dict:
+    """Return one validated installation record or fail closed.
+
+    Args:
+        payload: The parsed installation file.
         host_type: The host type the file must belong to.
 
     Returns:
@@ -731,117 +916,225 @@ def _validate_instance(payload: Mapping[str, Any], host_type: str) -> dict:
         InstanceError: With ``instance_state_invalid`` for any local corruption.
     """
 
-    def _require_text(key: str) -> str:
-        """Return one required non-empty string field, or fail closed.
-
-        Args:
-            key: The field name in the instance file.
-
-        Returns:
-            The stripped field value.
-        """
-
-        value = str(payload.get(key) or "").strip()
-        if not value:
-            raise InstanceError("instance_state_invalid", "instance file is missing %s" % key,
-                                EXIT_STATE_INVALID)
-        return value
-
     if int(payload.get("format_version") or 0) != FORMAT_VERSION:
-        raise InstanceError("instance_state_invalid", "unsupported instance file format",
+        raise InstanceError("instance_state_invalid", "unsupported installation file format",
                             EXIT_STATE_INVALID)
-    if _require_text("host_type") != host_type:
-        raise InstanceError("instance_state_invalid", "instance file belongs to another host type",
+    if _record_text(payload, "host_type", "installation file") != host_type:
+        raise InstanceError("instance_state_invalid",
+                            "installation file belongs to another host type", EXIT_STATE_INVALID)
+    reference = _record_text(payload, "installation_ref", "installation file")
+    if not _valid_ref(reference):
+        raise InstanceError("instance_state_invalid", "stored installation_ref is malformed",
                             EXIT_STATE_INVALID)
-    seed = base64url_decode(_require_text("private_key_seed"))
-    if len(seed) != SEED_BYTES:
-        raise InstanceError("instance_state_invalid", "stored private seed has the wrong size",
-                            EXIT_STATE_INVALID)
-    public_key = _require_text("public_key")
-    if len(base64url_decode(public_key)) != PUBLIC_KEY_BYTES:
-        raise InstanceError("instance_state_invalid", "stored public key has the wrong size",
-                            EXIT_STATE_INVALID)
-    local_ref = _require_text("local_instance_ref")
-    if len(local_ref) != 32 or any(character not in "0123456789abcdef" for character in local_ref):
-        raise InstanceError("instance_state_invalid", "stored local_instance_ref is malformed",
+    legacy = str(payload.get("legacy_status") or LEGACY_ABSENT).strip()
+    if legacy not in LEGACY_STATUSES:
+        raise InstanceError("instance_state_invalid", "stored legacy_status is malformed",
                             EXIT_STATE_INVALID)
     return {
         "format_version": FORMAT_VERSION,
         "host_type": host_type,
-        "os_type": _require_text("os_type"),
-        "local_instance_ref": local_ref,
-        "public_key": public_key,
-        "private_key_seed": base64url_encode(seed),
-        "display_name": _require_text("display_name"),
-        "signer": _require_text("signer"),
+        "os_type": _record_text(payload, "os_type", "installation file"),
+        "installation_ref": reference,
+        "legacy_status": legacy,
         "created_at": str(payload.get("created_at") or ""),
     }
 
 
-def read_instance(host_type: str) -> Optional[dict]:
-    """Read and validate one host's instance file when it exists.
+def _validate_profile(payload: Mapping[str, Any], host_type: str, profile_key_value: str) -> dict:
+    """Return one validated per-identity profile or fail closed.
+
+    Args:
+        payload: The parsed profile file.
+        host_type: The host type the profile must belong to.
+        profile_key_value: The exact profile key the filename encodes.
+
+    Returns:
+        The validated profile.
+
+    Raises:
+        InstanceError: With ``instance_state_invalid`` for any local corruption.
+    """
+
+    description = "profile file"
+    if int(payload.get("format_version") or 0) != FORMAT_VERSION:
+        raise InstanceError("instance_state_invalid", "unsupported %s format" % description,
+                            EXIT_STATE_INVALID)
+    if _record_text(payload, "host_type", description) != host_type:
+        raise InstanceError("instance_state_invalid",
+                            "%s belongs to another host type" % description, EXIT_STATE_INVALID)
+    if _record_text(payload, "profile_key", description) != profile_key_value:
+        raise InstanceError("instance_state_invalid",
+                            "%s belongs to another profile" % description, EXIT_STATE_INVALID)
+    seed = base64url_decode(_record_text(payload, "private_key_seed", description))
+    if len(seed) != SEED_BYTES:
+        raise InstanceError("instance_state_invalid",
+                            "stored private seed has the wrong size", EXIT_STATE_INVALID)
+    public_key = _record_text(payload, "public_key", description)
+    if len(base64url_decode(public_key)) != PUBLIC_KEY_BYTES:
+        raise InstanceError("instance_state_invalid",
+                            "stored public key has the wrong size", EXIT_STATE_INVALID)
+    signer = _record_text(payload, "signer", description)
+    if signer not in SIGNERS:
+        raise InstanceError("instance_state_invalid", "stored signer is unsupported",
+                            EXIT_STATE_INVALID)
+    instance_id = str(payload.get("server_instance_id") or "").strip() or None
+    if instance_id is not None and not INSTANCE_ID_PATTERN.match(instance_id):
+        raise InstanceError("instance_state_invalid", "stored server_instance_id is malformed",
+                            EXIT_STATE_INVALID)
+    return {
+        "format_version": FORMAT_VERSION,
+        "host_type": host_type,
+        "profile_key": profile_key_value,
+        "os_type": _record_text(payload, "os_type", description),
+        "public_key": public_key,
+        "private_key_seed": base64url_encode(seed),
+        "display_name": _record_text(payload, "display_name", description),
+        "signer": signer,
+        "server_instance_id": instance_id,
+        "source": str(payload.get("source") or "created"),
+        "created_at": str(payload.get("created_at") or ""),
+        "updated_at": str(payload.get("updated_at") or ""),
+    }
+
+
+def _validate_legacy_instance(payload: Mapping[str, Any], host_type: str) -> dict:
+    """Return one validated legacy single-key instance record or fail closed.
+
+    The legacy record is read only.  It is never rewritten, so a rollback to the
+    previous helper still finds the exact key and reference it left behind.
+
+    Args:
+        payload: The parsed legacy ``instance.json``.
+        host_type: The host type the file must belong to.
+
+    Returns:
+        The validated legacy record.
+
+    Raises:
+        InstanceError: With ``instance_state_invalid`` for any local corruption.
+    """
+
+    description = "legacy instance file"
+    if int(payload.get("format_version") or 0) != LEGACY_FORMAT_VERSION:
+        raise InstanceError("instance_state_invalid", "unsupported %s format" % description,
+                            EXIT_STATE_INVALID)
+    if _record_text(payload, "host_type", description) != host_type:
+        raise InstanceError("instance_state_invalid",
+                            "%s belongs to another host type" % description, EXIT_STATE_INVALID)
+    seed = base64url_decode(_record_text(payload, "private_key_seed", description))
+    if len(seed) != SEED_BYTES:
+        raise InstanceError("instance_state_invalid",
+                            "legacy private seed has the wrong size", EXIT_STATE_INVALID)
+    public_key = _record_text(payload, "public_key", description)
+    if len(base64url_decode(public_key)) != PUBLIC_KEY_BYTES:
+        raise InstanceError("instance_state_invalid",
+                            "legacy public key has the wrong size", EXIT_STATE_INVALID)
+    reference = _record_text(payload, "local_instance_ref", description)
+    if not _valid_ref(reference):
+        raise InstanceError("instance_state_invalid",
+                            "legacy local_instance_ref is malformed", EXIT_STATE_INVALID)
+    return {
+        "format_version": LEGACY_FORMAT_VERSION,
+        "host_type": host_type,
+        "os_type": _record_text(payload, "os_type", description),
+        "local_instance_ref": reference,
+        "public_key": public_key,
+        "private_key_seed": base64url_encode(seed),
+        "display_name": _record_text(payload, "display_name", description),
+        "signer": _record_text(payload, "signer", description),
+        "created_at": str(payload.get("created_at") or ""),
+    }
+
+
+def read_installation(host_type: str) -> Optional[dict]:
+    """Read and validate one host installation record when it exists.
 
     Args:
         host_type: One of ``HOST_TYPES``.
 
     Returns:
-        The validated instance record, or ``None`` when no file exists.
+        The validated installation, or ``None`` when absent.
 
     Raises:
         InstanceError: With ``instance_state_invalid`` when the file is unreadable.
     """
 
-    path = instance_path(host_type)
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-    except (OSError, ValueError) as exc:
-        raise InstanceError(
-            "instance_state_invalid",
-            "the local instance file at %s is unreadable; run 'forget' and bind again" % path,
-            EXIT_STATE_INVALID,
-        ) from exc
-    if not isinstance(payload, Mapping):
-        raise InstanceError("instance_state_invalid", "the local instance file is not an object",
-                            EXIT_STATE_INVALID)
-    return _validate_instance(payload, host_type)
+    payload = _json_file_payload(installation_path(host_type), "installation file")
+    return None if payload is None else _validate_installation(payload, host_type)
 
 
-def _create_instance(host_type: str, display_name: Optional[str]) -> dict:
-    """Create exactly one instance record and write it atomically.
-
-    The signer is resolved before anything is created, so a machine with no
-    usable signer leaves no partial state behind.
+def read_profile(host_type: str, profile_key_value: str) -> Optional[dict]:
+    """Read and validate one per-identity profile when it exists.
 
     Args:
         host_type: One of ``HOST_TYPES``.
-        display_name: An optional caller-supplied name.
+        profile_key_value: The server-issued opaque profile key.
 
     Returns:
-        The newly written instance record.
+        The validated profile, or ``None`` when absent.
+
+    Raises:
+        InstanceError: With ``instance_state_invalid`` when the file is unreadable.
     """
 
-    signer = resolve_signer()
-    seed = generate_seed()
-    public_key = derive_public_key(signer, seed)
-    requested_name = str(display_name).strip() if display_name is not None else ""
-    record = {
-        "format_version": FORMAT_VERSION,
-        "host_type": host_type,
-        "os_type": os_type_value(),
-        "local_instance_ref": os.urandom(16).hex(),
-        "public_key": public_key,
-        "private_key_seed": base64url_encode(seed),
-        "display_name": (requested_name or default_display_name(host_type))[:120],
-        "signer": signer,
-        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-    }
-    _ensure_directory(host_dir(host_type))
-    path = instance_path(host_type)
-    handle, temporary = tempfile.mkstemp(prefix=".instance-", suffix=".tmp",
-                                         dir=os.path.dirname(path))
+    key = validate_profile_key(profile_key_value)
+    payload = _json_file_payload(profile_path(host_type, key), "profile file")
+    return None if payload is None else _validate_profile(payload, host_type, key)
+
+
+def read_legacy_instance(host_type: str) -> Optional[dict]:
+    """Read and validate the legacy single-key instance file when it exists.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+
+    Returns:
+        The validated legacy record, or ``None`` when absent.
+
+    Raises:
+        InstanceError: With ``instance_state_invalid`` when the file is unreadable.
+    """
+
+    payload = _json_file_payload(instance_path(host_type), "legacy instance file")
+    return None if payload is None else _validate_legacy_instance(payload, host_type)
+
+
+def iter_profiles(host_type: str) -> list[dict]:
+    """Return every valid per-identity profile in one host installation.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+
+    Returns:
+        A list of validated profiles, ordered by profile key.
+    """
+
+    directory = profiles_dir(host_type)
+    if not os.path.isdir(directory):
+        return []
+    profiles = []
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith(".json") or not PROFILE_KEY_PATTERN.match(name[:-5]):
+            continue
+        profile = read_profile(host_type, name[:-5])
+        if profile is not None:
+            profiles.append(profile)
+    return profiles
+
+
+def _atomic_write_json(path: str, record: Mapping[str, Any]) -> dict:
+    """Write one JSON record atomically with owner-only permissions.
+
+    Args:
+        path: Destination path.
+        record: The JSON-serializable record.
+
+    Returns:
+        The record that was written.
+    """
+
+    _ensure_directory(os.path.dirname(path))
+    handle, temporary = tempfile.mkstemp(prefix=".", suffix=".tmp", dir=os.path.dirname(path))
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
             json.dump(record, stream, sort_keys=True, indent=2)
@@ -856,7 +1149,128 @@ def _create_instance(host_type: str, display_name: Optional[str]) -> dict:
         except OSError:
             pass
         raise
-    return record
+    return dict(record)
+
+
+def write_installation(host_type: str, installation: Mapping[str, Any]) -> dict:
+    """Write one installation record atomically.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+        installation: The record to write.
+
+    Returns:
+        The record that was written.
+    """
+
+    return _atomic_write_json(installation_path(host_type), installation)
+
+
+def write_profile(host_type: str, profile: Mapping[str, Any]) -> dict:
+    """Write one profile record atomically.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+        profile: The record to write; its ``profile_key`` names the file.
+
+    Returns:
+        The record that was written.
+    """
+
+    return _atomic_write_json(profile_path(host_type, profile["profile_key"]), profile)
+
+
+def _new_installation(host_type: str, legacy: Optional[Mapping[str, Any]]) -> dict:
+    """Build one new installation record, adopting the legacy ref when present.
+
+    Adopting the legacy reference is what lets the server reuse the instance a
+    Person already bound with the old helper.  The ref remains an audit clue
+    only, never an identity or an authority.
+    """
+
+    if legacy is not None:
+        reference = legacy["local_instance_ref"]
+        legacy_status = LEGACY_UNCLAIMED
+    else:
+        reference = os.urandom(16).hex()
+        legacy_status = LEGACY_ABSENT
+    return {
+        "format_version": FORMAT_VERSION,
+        "host_type": host_type,
+        "os_type": os_type_value(),
+        "installation_ref": reference,
+        "legacy_status": legacy_status,
+        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
+def _read_or_create_installation_locked(host_type: str) -> dict:
+    """Return the installation record, creating it while the caller holds the lock."""
+
+    existing = read_installation(host_type)
+    if existing is not None:
+        return existing
+    return write_installation(host_type, _new_installation(host_type, read_legacy_instance(host_type)))
+
+
+def _new_profile(host_type: str, key: str, signer: str, seed: bytes, public_key: str,
+                 display_name: Optional[str], source: str) -> dict:
+    """Build one profile record with its own key pair and no cached server id."""
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {
+        "format_version": FORMAT_VERSION,
+        "host_type": host_type,
+        "profile_key": key,
+        "os_type": os_type_value(),
+        "public_key": public_key,
+        "private_key_seed": base64url_encode(seed),
+        "display_name": (str(display_name or "").strip() or default_display_name(host_type))[:120],
+        "signer": signer,
+        "server_instance_id": None,
+        "source": source,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def _create_profile_locked(host_type: str, key: str, display_name: Optional[str],
+                           confirmed_legacy_fingerprint: Optional[str] = None) -> dict:
+    """Create one profile while the caller holds the lock.
+
+    A legacy single-key file is never inherited on the strength of local state
+    alone: the first Person to log in after an upgrade could be someone other
+    than the old owner, and giving them the old key both fails the server's
+    key-ownership check and consumes the migration slot.  The key is adopted
+    only when the server has confirmed, for this verified (Person, Agent) and
+    this installation ref, the exact fingerprint the legacy file holds.  Every
+    other identity gets a fresh key of its own, and the legacy file stays
+    ``unclaimed`` so its true owner can still adopt it on a later login.
+    """
+
+    installation = _read_or_create_installation_locked(host_type)
+    legacy = read_legacy_instance(host_type)
+    inherit = (
+        legacy is not None
+        and installation["legacy_status"] == LEGACY_UNCLAIMED
+        and confirmed_legacy_fingerprint is not None
+        and confirmed_legacy_fingerprint == public_key_fingerprint(legacy["public_key"])
+        and not any(profile["public_key"] == legacy["public_key"]
+                    for profile in iter_profiles(host_type))
+    )
+    if inherit:
+        profile = _new_profile(host_type, key, legacy["signer"],
+                               base64url_decode(legacy["private_key_seed"]),
+                               legacy["public_key"],
+                               display_name or legacy["display_name"], "legacy_migrated")
+        installation["legacy_status"] = LEGACY_CLAIMED
+        write_installation(host_type, installation)
+    else:
+        signer = resolve_signer()
+        seed = generate_seed()
+        profile = _new_profile(host_type, key, signer, seed,
+                               derive_public_key(signer, seed), display_name, "created")
+    return write_profile(host_type, profile)
 
 
 def _acquire_lock(host_type: str) -> int:
@@ -956,52 +1370,178 @@ def _release_lock(host_type: str, handle: int) -> None:
         pass
 
 
-def ensure_instance(host_type: str, display_name: Optional[str] = None) -> dict:
-    """Return the existing instance, creating exactly one when none exists.
+def ensure_installation(host_type: str) -> dict:
+    """Return one host's installation record, creating it exactly once.
 
-    Two simultaneous first calls must produce exactly one key pair and one
-    ``local_instance_ref``: the loser of the race waits for the exclusive lock
-    and then re-reads the winner's file.
+    Two simultaneous first calls must produce exactly one installation ref: the
+    loser of the race waits for the exclusive lock and then re-reads the winner's
+    file.
 
     Args:
         host_type: One of ``HOST_TYPES``.
-        display_name: An optional name used only when creating the instance.
 
     Returns:
-        The instance record for this host.
+        The installation record for this host.
     """
 
-    existing = read_instance(host_type)
+    existing = read_installation(host_type)
     if existing is not None:
         return existing
-    # Fail closed before creating a directory when no signer exists at all.
+    # Fail closed before creating a directory when no signer exists at all, so a
+    # machine that cannot sign never leaves half-written instance state behind.
     resolve_signer()
     _ensure_directory(host_dir(host_type))
     handle = _acquire_lock(host_type)
     try:
-        existing = read_instance(host_type)
-        if existing is not None:
-            return existing
-        return _create_instance(host_type, display_name)
+        return _read_or_create_installation_locked(host_type)
     finally:
         _release_lock(host_type, handle)
 
 
-def forget_instance(host_type: str) -> bool:
-    """Delete this host's local instance material.
+def ensure_profile(host_type: str, profile_key_value: str,
+                   display_name: Optional[str] = None,
+                   confirmed_legacy_fingerprint: Optional[str] = None) -> dict:
+    """Return one identity's profile, creating it exactly once when absent.
+
+    When the server has confirmed that the verified identity already owns an
+    existing instance under the installed ref, and that instance's fingerprint
+    is the legacy file's key, the new profile inherits the legacy key so the
+    Person keeps the exact server instance they already had.  Any other identity
+    gets a fresh key pair of its own; the unconfirmed legacy key is never handed
+    to whoever logs in first.
 
     Args:
         host_type: One of ``HOST_TYPES``.
+        profile_key_value: The server's opaque profile key for the verified
+            (Person, logical Agent).
+        display_name: An optional name used only when creating the profile.
+        confirmed_legacy_fingerprint: The exact fingerprint the server reported
+            for this identity's existing instance under this ref, or ``None``.
 
     Returns:
-        True when a file was removed, False when nothing existed.
+        The profile record for this identity.
     """
 
+    key = validate_profile_key(profile_key_value)
+    existing = read_profile(host_type, key)
+    if existing is not None:
+        return existing
+    # Fail closed before writing anything when no signer is available.
+    resolve_signer()
+    _ensure_directory(host_dir(host_type))
+    handle = _acquire_lock(host_type)
+    try:
+        existing = read_profile(host_type, key)
+        if existing is not None:
+            return existing
+        return _create_profile_locked(host_type, key, display_name,
+                                      confirmed_legacy_fingerprint)
+    finally:
+        _release_lock(host_type, handle)
+
+
+def recover_profile(host_type: str, profile_key_value: str,
+                    display_name: Optional[str] = None) -> dict:
+    """Mint fresh local key material for one identity after a server refusal.
+
+    The profile keeps its identity and readable name but receives a new key pair
+    and loses its cached server instance id.  Recovery is profile-scoped: it
+    never deletes another identity's profile, never rotates the shared
+    installation ref, and never consumes or poisons the legacy single-key file.
+    The legacy file stays available, so the identity the server confirms as its
+    owner can still adopt it on a later login; the caller here is simply minting
+    a new key for itself.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+        profile_key_value: The server's opaque profile key.
+        display_name: An optional replacement name.
+
+    Returns:
+        The recovered profile record.
+    """
+
+    key = validate_profile_key(profile_key_value)
+    signer = resolve_signer()
+    _ensure_directory(host_dir(host_type))
+    handle = _acquire_lock(host_type)
+    try:
+        existing = read_profile(host_type, key)
+        seed = generate_seed()
+        name = display_name or (existing["display_name"] if existing else None)
+        profile = _new_profile(host_type, key, signer, seed,
+                               derive_public_key(signer, seed), name, "recovered")
+        return write_profile(host_type, profile)
+    finally:
+        _release_lock(host_type, handle)
+
+
+def record_instance(host_type: str, profile_key_value: str, instance_id: str) -> dict:
+    """Record the server instance id a successful bind returned for one profile.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+        profile_key_value: The server's opaque profile key.
+        instance_id: The exact ``agi_...`` identifier the server returned.
+
+    Returns:
+        The updated profile record.
+    """
+
+    key = validate_profile_key(profile_key_value)
+    text = str(instance_id or "").strip()
+    if not INSTANCE_ID_PATTERN.match(text):
+        raise InstanceError("instance_state_invalid", "the reported instance id is malformed",
+                            EXIT_STATE_INVALID)
+    profile = ensure_profile(host_type, key)
+    profile["server_instance_id"] = text
+    profile["updated_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return write_profile(host_type, profile)
+
+
+def forget_instance(host_type: str, profile_key_value: Optional[str] = None) -> bool:
+    """Delete one identity's local profile, or the whole installation.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+        profile_key_value: When given, remove only that profile.  When omitted,
+            remove the installation, every profile and the legacy file.  This is
+            the explicit "remove this device" action; a plugin upgrade never
+            calls it.
+
+    Returns:
+        True when at least one file was removed, False when nothing existed.
+    """
+
+    if profile_key_value is not None:
+        key = validate_profile_key(profile_key_value)
+        try:
+            os.unlink(profile_path(host_type, key))
+            removed = True
+        except OSError:
+            removed = False
+        try:
+            os.rmdir(profiles_dir(host_type))
+        except OSError:
+            pass
+        return removed
     removed = False
-    for path in (instance_path(host_type), lock_path(host_type)):
+    for path in (installation_path(host_type), instance_path(host_type), lock_path(host_type)):
         try:
             os.unlink(path)
-            removed = removed or path.endswith(INSTANCE_FILE_NAME)
+            removed = True
+        except OSError:
+            pass
+    directory = profiles_dir(host_type)
+    if os.path.isdir(directory):
+        for name in os.listdir(directory):
+            try:
+                os.unlink(os.path.join(directory, name))
+                removed = True
+            except OSError:
+                pass
+        try:
+            os.rmdir(directory)
         except OSError:
             pass
     try:
@@ -1014,56 +1554,95 @@ def forget_instance(host_type: str) -> bool:
 # --- Commands --------------------------------------------------------------
 
 
-def status_payload(instance: Mapping[str, Any]) -> dict:
-    """Build the public status object for one instance.
+def status_payload(installation: Mapping[str, Any], profile: Optional[Mapping[str, Any]] = None) -> dict:
+    """Build the public status object for one installation or one profile.
 
-    The private seed is never part of this payload.
+    The private seed is never part of this payload, and a profile for another
+    identity is never expanded into this answer.  Only opaque profile keys are
+    listed so one Person is never shown another Person's identity.
 
     Args:
-        instance: A validated instance record.
+        installation: A validated installation record.
+        profile: The validated profile to report, or ``None`` for the typed
+            unbound installation view.
 
     Returns:
         The JSON-serializable status object.
     """
 
-    return {
+    host_type = installation["host_type"]
+    payload = {
         "format_version": FORMAT_VERSION,
-        "host_type": instance["host_type"],
-        "os_type": instance["os_type"],
-        "local_instance_ref": instance["local_instance_ref"],
-        "public_key": instance["public_key"],
-        "public_key_fingerprint": public_key_fingerprint(instance["public_key"]),
-        "display_name": instance["display_name"],
+        "host_type": host_type,
+        "installation_ref": installation["installation_ref"],
         "data_dir": data_root(),
-        "signer": instance["signer"],
-        "instance_path": instance_path(instance["host_type"]),
-        "created_at": instance["created_at"],
+        "instance_path": installation_path(host_type),
+        "legacy_status": installation["legacy_status"],
+        "legacy_path": instance_path(host_type),
+        "profiles": sorted(item["profile_key"] for item in iter_profiles(host_type)),
     }
+    if profile is None:
+        # A pure installation view never invents a profile.  It reports the typed
+        # state and the exact server-verified key the caller must pass back in.
+        payload.update({
+            "profile_status": "profile_required",
+            "signer": resolve_signer(),
+            "recovery": ("call agent_instance.current with local_instance_ref, then pass its "
+                         "profile_key and existing_public_key_fingerprint to "
+                         "status --profile <profile_key> --confirmed-fingerprint <fingerprint>"),
+        })
+        return payload
+    payload.update({
+        "profile_status": "ready",
+        "profile_key": profile["profile_key"],
+        "os_type": profile["os_type"],
+        "public_key": profile["public_key"],
+        "public_key_fingerprint": public_key_fingerprint(profile["public_key"]),
+        "display_name": profile["display_name"],
+        "signer": profile["signer"],
+        "server_instance_id": profile["server_instance_id"],
+        "source": profile["source"],
+        "created_at": profile["created_at"],
+    })
+    return payload
 
 
-def command_status(host_type: str, display_name: Optional[str] = None) -> dict:
-    """Initialize the instance when absent and report its public fields.
+def command_status(host_type: str, profile_key_value: Optional[str] = None,
+                   display_name: Optional[str] = None,
+                   confirmed_legacy_fingerprint: Optional[str] = None) -> dict:
+    """Report the installation, and initialize one identity's profile when named.
 
     Args:
         host_type: One of ``HOST_TYPES``.
+        profile_key_value: The server's opaque profile key, or ``None`` for the
+            typed unbound installation view.
         display_name: An optional name used only on first creation.
+        confirmed_legacy_fingerprint: The exact fingerprint the server reported
+            for this verified identity's existing instance under this ref, used
+            only to adopt a legacy key that provably belongs to this identity.
 
     Returns:
         The status object.
     """
 
-    return status_payload(ensure_instance(host_type, display_name))
+    installation = ensure_installation(host_type)
+    if profile_key_value is None:
+        return status_payload(installation)
+    profile = ensure_profile(host_type, profile_key_value, display_name,
+                             confirmed_legacy_fingerprint)
+    return status_payload(installation, profile)
 
 
-def command_sign(host_type: str, challenge_file: str) -> dict:
-    """Sign the exact challenge bytes read from a file.
+def command_sign(host_type: str, profile_key_value: str, challenge_file: str) -> dict:
+    """Sign the exact challenge bytes with one identity's profile key.
 
     Args:
         host_type: One of ``HOST_TYPES``.
+        profile_key_value: The server's opaque profile key.
         challenge_file: Path to a file holding the exact challenge bytes.
 
     Returns:
-        ``{"signature": ..., "public_key": ...}``.
+        ``{"signature": ..., "public_key": ..., "profile_key": ...}``.
 
     Raises:
         InstanceError: When the challenge cannot be read or signing fails.
@@ -1078,28 +1657,73 @@ def command_sign(host_type: str, challenge_file: str) -> dict:
     if not message:
         raise InstanceError("instance_challenge_empty", "the challenge file is empty",
                             EXIT_CHALLENGE_UNREADABLE)
-    instance = ensure_instance(host_type)
-    seed = base64url_decode(instance["private_key_seed"])
-    signature = sign_message(resolve_signer(instance["signer"]), seed, message)
-    return {"signature": signature, "public_key": instance["public_key"]}
+    profile = ensure_profile(host_type, profile_key_value)
+    seed = base64url_decode(profile["private_key_seed"])
+    signature = sign_message(resolve_signer(profile["signer"]), seed, message)
+    return {
+        "signature": signature,
+        "public_key": profile["public_key"],
+        "profile_key": profile["profile_key"],
+    }
 
 
-def command_forget(host_type: str) -> dict:
-    """Delete this host's local instance material and report the outcome.
+def command_record(host_type: str, profile_key_value: str, instance_id: str) -> dict:
+    """Persist the server instance id a successful bind returned.
 
     Args:
         host_type: One of ``HOST_TYPES``.
+        profile_key_value: The server's opaque profile key.
+        instance_id: The exact ``agi_...`` identifier the server returned.
+
+    Returns:
+        The updated status object.
+    """
+
+    profile = record_instance(host_type, profile_key_value, instance_id)
+    return status_payload(read_installation(host_type), profile)
+
+
+def command_recover(host_type: str, profile_key_value: str,
+                    display_name: Optional[str] = None) -> dict:
+    """Mint fresh local key material for one identity after a server refusal.
+
+    This is the explicit recovery path for ``instance_key_mismatch``,
+    ``instance_key_already_bound`` and ``instance_revoked``.  The old server row
+    is retained, never reassigned, and the local profile keeps its identity.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+        profile_key_value: The server's opaque profile key.
+        display_name: An optional replacement name.
+
+    Returns:
+        The recovered status object.
+    """
+
+    profile = recover_profile(host_type, profile_key_value, display_name)
+    return status_payload(read_installation(host_type), profile)
+
+
+def command_forget(host_type: str, profile_key_value: Optional[str] = None) -> dict:
+    """Delete one identity's profile, or the whole installation, and report it.
+
+    Args:
+        host_type: One of ``HOST_TYPES``.
+        profile_key_value: When given, remove only that profile.  When omitted,
+            remove the installation, every profile and the legacy file.
 
     Returns:
         ``{"forgotten": <bool>, ...}``.
     """
 
-    removed = forget_instance(host_type)
+    removed = forget_instance(host_type, profile_key_value)
     return {
         "forgotten": removed,
+        "scope": "profile" if profile_key_value else "installation",
         "host_type": host_type,
         "data_dir": data_root(),
-        "instance_path": instance_path(host_type),
+        "instance_path": (profile_path(host_type, profile_key_value)
+                          if profile_key_value else installation_path(host_type)),
     }
 
 
@@ -1116,16 +1740,34 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    status = sub.add_parser("status", help="initialize when absent, then report the local instance")
+    status = sub.add_parser(
+        "status", help="report one identity's local profile, creating it when absent")
     status.add_argument("--host", required=True, choices=sorted(HOST_TYPES))
+    status.add_argument("--profile", default=None)
     status.add_argument("--display-name", default=None)
+    status.add_argument(
+        "--confirmed-fingerprint", default=None,
+        help="fingerprint the server reported for this identity's existing instance")
 
     sign = sub.add_parser("sign", help="sign the exact challenge bytes read from a file")
     sign.add_argument("--host", required=True, choices=sorted(HOST_TYPES))
+    sign.add_argument("--profile", default=None)
     sign.add_argument("--challenge-file", required=True)
 
-    forget = sub.add_parser("forget", help="delete the local instance material")
+    record = sub.add_parser("record", help="remember the server instance id a bind returned")
+    record.add_argument("--host", required=True, choices=sorted(HOST_TYPES))
+    record.add_argument("--profile", default=None)
+    record.add_argument("--instance-id", required=True)
+
+    recover = sub.add_parser("recover", help="mint fresh local key material for one identity")
+    recover.add_argument("--host", required=True, choices=sorted(HOST_TYPES))
+    recover.add_argument("--profile", default=None)
+    recover.add_argument("--display-name", default=None)
+
+    forget = sub.add_parser(
+        "forget", help="delete one identity's profile, or the whole installation")
     forget.add_argument("--host", required=True, choices=sorted(HOST_TYPES))
+    forget.add_argument("--profile", default=None)
     return parser
 
 
@@ -1154,12 +1796,18 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     args = _parser().parse_args(argv)
     try:
+        host_type = validate_host_type(args.host)
         if args.command == "status":
-            _json_out(command_status(validate_host_type(args.host), args.display_name))
+            _json_out(command_status(host_type, args.profile, args.display_name,
+                                     args.confirmed_fingerprint))
         elif args.command == "sign":
-            _json_out(command_sign(validate_host_type(args.host), args.challenge_file))
+            _json_out(command_sign(host_type, args.profile, args.challenge_file))
+        elif args.command == "record":
+            _json_out(command_record(host_type, args.profile, args.instance_id))
+        elif args.command == "recover":
+            _json_out(command_recover(host_type, args.profile, args.display_name))
         elif args.command == "forget":
-            _json_out(command_forget(validate_host_type(args.host)))
+            _json_out(command_forget(host_type, args.profile))
         return EXIT_OK
     except InstanceError as exc:
         _json_out({"ok": False, "error_code": exc.code, "message": exc.message})
