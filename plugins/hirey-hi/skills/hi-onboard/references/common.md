@@ -39,6 +39,31 @@ checked**; never render an unknown as a pass. A generic client without a branded
 only a candidate is labeled **Awaiting host verification**.
 <!-- /fragment -->
 
+<!-- fragment:first-connection-binding -->
+## Bind on the first authenticated connection
+
+After OAuth completes and the tools are verified, bind this installation as part of the connection
+instead of waiting for a later instance-directed action. A fresh Agent must start on the new
+per-identity instance mechanism:
+
+1. Run the `hi-instance` helper's bare `status --host codex` to obtain the stable
+   `installation_ref`. It creates the installation record but no key pair.
+2. Call `agent_instance.current` with `{local_instance_ref: <installation_ref>}`. If it reports
+   `binding_status: "bound"`, this Agent Session is already bound; continue.
+3. When it reports `instance_binding_required`, complete the `hi-instance` first-bind flow:
+   `status --profile <profile_key> --confirmed-fingerprint <existing_public_key_fingerprint>` (omit
+   the flag for a null fingerprint), `agent_instance.binding.begin`, sign the exact challenge,
+   `agent_instance.binding.finish`, then `record` the returned instance id.
+4. Report the instance `agent_instance.current` returns now, not a remembered one. Ordinary Hi work
+   stays available even if binding cannot complete; a binding failure is an unbound instance, not an
+   invalid credential.
+
+This skill is the deterministic trigger available to the host. A host runtime that never runs its
+onboarding skill after OAuth has no automatic post-login hook, so its first bind still happens on the
+first instance-directed action; never claim an automatic first-login bind for such a host.
+<!-- /fragment -->
+
+
 ## Identity and authority
 
 Authentication establishes the Account, Person, Workspace, Agent, and Agent Session that business
