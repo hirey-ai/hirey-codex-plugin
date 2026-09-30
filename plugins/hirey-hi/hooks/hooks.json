@@ -1,0 +1,34 @@
+{
+  "description": "Bounded Hirey Hi new-message reminder for Codex. Emits only fixed trusted developer-context instructions for one bounded first-page read; the current Codex Agent performs the authorized MCP read through the existing workspace_workflows agent_message.list action.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/hirey_inbox_reminder.py\"",
+            "commandWindows": "py -3 \"${PLUGIN_ROOT}/hooks/hirey_inbox_reminder.py\"",
+            "statusMessage": "Checking Hirey message reminder cadence",
+            "timeout": 10,
+            "additionalContextLimit": 2000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/hirey_inbox_reminder.py\"",
+            "commandWindows": "py -3 \"${PLUGIN_ROOT}/hooks/hirey_inbox_reminder.py\"",
+            "statusMessage": "Checking Hirey message reminder cadence",
+            "timeout": 10,
+            "additionalContextLimit": 2000
+          }
+        ]
+      }
+    ]
+  }
+}

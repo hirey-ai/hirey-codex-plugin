@@ -39,6 +39,7 @@ Page, Need, People, Message, Meeting, Product Signal, and Repair operations.
 - `hi-use`: existing people, relationship, messaging, and meeting workflows.
 - `hi-events`: one typed business inbox for messages, tasks, and user-visible events, plus safe Agent-message leases.
 - `hi-repair`: Product Signal and scoped Repair Case workflow.
+- `hi-instance`: this computer's Hi local instance — status, first bind, challenge signing and recovery. Its key pair is kept per host under the user's own data directory, outside the plugin version cache, so upgrading or reinstalling the plugin does not change the instance.
 - `.mcp.json`: the hosted MCP URL and OAuth resource.
 
 The MCP service exposes one existing tool, `workspace_workflows`. Business operations are actions

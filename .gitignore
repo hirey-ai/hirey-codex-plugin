@@ -8,3 +8,5 @@
 # Plugin author scratch
 node_modules/
 dist/
+
+__pycache__/
