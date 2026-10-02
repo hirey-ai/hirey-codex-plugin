@@ -5,7 +5,11 @@ matter here are process-level ones: two simultaneous first calls must produce
 exactly one key pair, one installation switching Person A -> B -> A must keep two
 separate keys under one shared installation ref, a plugin upgrade must not change
 the profile, a legacy single-key file must be migrated without being rewritten,
-and the private seed must never leave the machine.
+and the private seed must never leave the machine.  The lock and creation-safety
+tests also call the helper in process, to stage the exact race states (an
+ownerless lock, a lock name pending deletion, a late racer, another caller
+breaking or taking the lock at the moment one call removes it) that real
+processes hit only by timing.
 
 The helper itself imports no third-party module, so this file imports nothing
 third-party either; the Ed25519 checks are skipped when the environment cannot
@@ -13,6 +17,8 @@ provide a signer or the cross-repository verifier is not checked out.
 """
 
 import base64
+import contextlib
+import errno
 import json
 import os
 from pathlib import Path
@@ -20,7 +26,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
+import types
 import unittest
+from unittest import mock
 import importlib.util
 
 
@@ -45,6 +55,18 @@ PROFILE_B = "b" * 64
 PROFILE_C = "c" * 64
 LEGACY_REF = "0123456789abcdef0123456789abcdef"
 
+
+# A separate process that takes the removal guard of one lock and keeps it until
+# it is killed, as a remover killed inside the guard would.
+GUARD_HOLDER_SCRIPT = r"""
+import importlib.util, sys, time
+spec = importlib.util.spec_from_file_location("hi_instance_guard_holder", sys.argv[1])
+helper = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(helper)
+handle = helper._take_guard(sys.argv[2], time.monotonic() + 10)
+print("held" if handle is not None else "missed", flush=True)
+time.sleep(300)
+"""
 
 def load_helper():
     """Import the helper module in-process for direct function tests.
@@ -550,6 +572,551 @@ class HiInstanceTests(unittest.TestCase):
             sorted(path.name for path in (self.data_root / "codex" / "profiles").iterdir()),
             ["%s.json" % PROFILE_A],
         )
+
+    # -- lock and creation safety --------------------------------------------
+
+    def in_process_helper(self):
+        """Load the helper with this test's data root and a short lock deadline."""
+
+        patcher = mock.patch.dict(os.environ, {"HIREY_INSTANCE_DATA_DIR": str(self.data_root)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        helper = load_helper()
+        helper.LOCK_TIMEOUT_SECONDS = 0.5
+        (self.data_root / "codex").mkdir(parents=True, exist_ok=True)
+        return helper
+
+    def lock_file(self, host="codex"):
+        """Return the path of one host's initialization lock inside the data root."""
+
+        return self.data_root / host / "instance.lock"
+
+    def test_a_fresh_lock_without_a_complete_owner_is_live_not_broken(self):
+        """A lock whose owner record is empty or partial is waited for, never broken."""
+
+        helper = self.in_process_helper()
+        for content in (b"", b"12", b"not a pid\n", b"0\n"):
+            with self.subTest(content=content):
+                self.lock_file().write_bytes(content)
+                with self.assertRaises(helper.InstanceError) as raised:
+                    helper.ensure_installation("codex")
+                self.assertEqual(raised.exception.code, "instance_lock_timeout")
+                self.assertEqual(self.lock_file().read_bytes(), content)
+                self.assertFalse(self.installation_file().exists())
+
+    def test_an_ownerless_lock_past_the_stale_window_is_broken(self):
+        """The stale window still frees a lock whose owner died before writing."""
+
+        helper = self.in_process_helper()
+        self.lock_file().write_bytes(b"")
+        old = time.time() - 2 * helper.LOCK_STALE_SECONDS
+        os.utime(self.lock_file(), (old, old))
+        installation = helper.ensure_installation("codex")
+        self.assertEqual(len(installation["installation_ref"]), 32)
+        self.assertFalse(self.lock_file().exists())
+
+    @unittest.skipIf(os.name == "nt", "Windows has no harmless process liveness probe")
+    def test_a_lock_whose_owner_process_exited_is_broken(self):
+        """A complete owner record naming a dead process is broken at once."""
+
+        helper = self.in_process_helper()
+        finished = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"],
+                                  capture_output=True, text=True, check=True)
+        self.lock_file().write_bytes(("%d\n%s\n" % (int(finished.stdout), "e" * 32)).encode("ascii"))
+        installation = helper.ensure_installation("codex")
+        self.assertEqual(len(installation["installation_ref"]), 32)
+        self.assertFalse(self.lock_file().exists())
+
+    def test_a_lock_name_held_by_a_pending_delete_is_retried(self):
+        """Windows' access-denied on a lock being deleted is a busy lock, not a failure."""
+
+        helper = self.in_process_helper()
+        real_place = helper._place_new_file
+        denials = []
+
+        def deny_twice(temporary, path):
+            if path.endswith("instance.lock") and len(denials) < 2:
+                denials.append(path)
+                os.unlink(temporary)
+                raise PermissionError(13, "Permission denied", path)
+            return real_place(temporary, path)
+
+        with mock.patch.object(helper, "LOCK_NAME_HELD_ON_PERMISSION_ERROR", True), \
+                mock.patch.object(helper, "_place_new_file", deny_twice):
+            installation = helper.ensure_installation("codex")
+        self.assertEqual(len(denials), 2)
+        self.assertEqual(len(installation["installation_ref"]), 32)
+        self.assertEqual(sorted(path.name for path in (self.data_root / "codex").iterdir()),
+                         ["installation.json"])
+
+        def deny_always(temporary, path):
+            os.unlink(temporary)
+            raise PermissionError(13, "Permission denied", path)
+
+        with mock.patch.object(helper, "LOCK_NAME_HELD_ON_PERMISSION_ERROR", True), \
+                mock.patch.object(helper, "_place_new_file", deny_always), \
+                self.assertRaises(helper.InstanceError) as raised:
+            helper.ensure_profile("codex", PROFILE_A)
+        self.assertEqual(raised.exception.code, "instance_lock_timeout")
+        # Elsewhere an access-denied lock directory is a real failure, reported at once.
+        with mock.patch.object(helper, "LOCK_NAME_HELD_ON_PERMISSION_ERROR", False), \
+                mock.patch.object(helper, "_place_new_file", deny_always), \
+                self.assertRaises(PermissionError):
+            helper.ensure_profile("codex", PROFILE_A)
+        self.assertFalse(self.profile_file(PROFILE_A).exists())
+
+    def test_creation_never_replaces_an_existing_key_or_installation(self):
+        """A racer that reached creation late adopts the first record, never overwrites it."""
+
+        helper = self.in_process_helper()
+        first = helper._create_profile_locked("codex", PROFILE_A, None)
+        installation_bytes = self.installation_file().read_bytes()
+        profile_bytes = self.profile_file(PROFILE_A).read_bytes()
+
+        second = helper._create_profile_locked("codex", PROFILE_A, None)
+        self.assertEqual(second["public_key"], first["public_key"])
+        self.assertEqual(self.profile_file(PROFILE_A).read_bytes(), profile_bytes)
+
+        real_read = helper.read_installation
+        reads = []
+
+        def missed_first_read(host_type):
+            reads.append(host_type)
+            return None if len(reads) == 1 else real_read(host_type)
+
+        with mock.patch.object(helper, "read_installation", missed_first_read):
+            again = helper._read_or_create_installation_locked("codex")
+        self.assertEqual(again["installation_ref"], json.loads(installation_bytes)["installation_ref"])
+        self.assertEqual(self.installation_file().read_bytes(), installation_bytes)
+        self.assertEqual(sorted(path.name for path in (self.data_root / "codex").iterdir()),
+                         ["installation.json", "profiles"])
+        self.assertEqual(sorted(path.name for path in (self.data_root / "codex" / "profiles").iterdir()),
+                         ["%s.json" % PROFILE_A])
+
+    @unittest.skipIf(os.name == "nt", "Windows creates names exclusively by rename")
+    def test_a_file_system_without_hard_links_still_creates_one_instance(self):
+        """Without hard links, lock and records are created by O_EXCL and never replaced."""
+
+        helper = self.in_process_helper()
+        unsupported = OSError(errno.EPERM, "Operation not permitted")
+        with mock.patch.object(os, "link", side_effect=unsupported):
+            profile = helper.ensure_profile("codex", PROFILE_A)
+            again = helper.ensure_profile("codex", PROFILE_A)
+            profile_bytes = self.profile_file(PROFILE_A).read_bytes()
+            installation_bytes = self.installation_file().read_bytes()
+            # A late racer reaching creation must adopt, never replace.
+            late = helper._create_profile_locked("codex", PROFILE_A, None)
+            # Even a racer whose existence check ran before the first write landed.
+            with mock.patch.object(os.path, "exists", return_value=False):
+                self.assertFalse(helper._publish_new_json(str(self.installation_file()),
+                                                          {"installation_ref": "f" * 32}))
+        self.assertEqual(again["public_key"], profile["public_key"])
+        self.assertEqual(late["public_key"], profile["public_key"])
+        self.assertEqual(self.profile_file(PROFILE_A).read_bytes(), profile_bytes)
+        self.assertEqual(self.installation_file().read_bytes(), installation_bytes)
+        self.assertEqual(sorted(path.name for path in (self.data_root / "codex").iterdir()),
+                         ["installation.json", "profiles"])
+        self.assertEqual(sorted(path.name for path in (self.data_root / "codex" / "profiles").iterdir()),
+                         ["%s.json" % PROFILE_A])
+
+    def test_releasing_never_removes_another_holders_lock(self):
+        """A holder whose lock was broken and re-taken leaves the new holder's lock alone."""
+
+        helper = self.in_process_helper()
+        mine = helper._acquire_lock("codex")
+        theirs = ("%d\n%s\n" % (os.getpid(), "f" * 32)).encode("ascii")
+        os.unlink(self.lock_file())
+        self.lock_file().write_bytes(theirs)
+        helper._release_lock("codex", mine)
+        self.assertEqual(self.lock_file().read_bytes(), theirs)
+
+        os.unlink(self.lock_file())
+        mine = helper._acquire_lock("codex")
+        helper._release_lock("codex", mine)
+        self.assertFalse(self.lock_file().exists())
+
+    def make_stale_lock(self, helper, content=b""):
+        """Leave a lock as a crashed holder would: past the stale window."""
+
+        self.lock_file().write_bytes(content)
+        old = time.time() - 2 * helper.LOCK_STALE_SECONDS
+        os.utime(self.lock_file(), (old, old))
+
+    def link_cases(self):
+        """Run a race with hard links and, where the platform has them, without."""
+
+        cases = [("hard links", None)]
+        if os.name != "nt":
+            cases.append(("no hard links", OSError(errno.EPERM, "Operation not permitted")))
+        return cases
+
+    @contextlib.contextmanager
+    def racing_lock_removals(self, holders, before_free=None, after_free=None,
+                             link_error=None):
+        """Let other callers race every removal or move of the lock name.
+
+        Each time any caller is about to unlink or rename away ``instance.lock``,
+        ``before_free`` runs, then the file about to go is compared with the
+        records of holders that have not released, then the name is freed and
+        ``after_free`` runs.  Callers the hooks start are not raced again.
+
+        Args:
+            holders: Owner records of holders that have not released, by name.
+            before_free: Called just before the name is freed.
+            after_free: Called just after the name is freed.
+            link_error: When set, ``os.link`` fails with it (no hard links).
+
+        Yields:
+            The list that collects every live lock that was removed or moved.
+        """
+
+        lock = os.path.abspath(str(self.lock_file()))
+        real_unlink, real_rename = os.unlink, os.rename
+        violations = []
+        racing = []
+
+        def free(kind, path, operation):
+            if os.path.abspath(os.fspath(path)) != lock:
+                return operation()
+            outermost = not racing
+            racing.append(kind)
+            try:
+                if outermost and before_free is not None:
+                    before_free()
+                try:
+                    with open(lock, "rb") as handle:
+                        content = handle.read()
+                except OSError:
+                    content = None
+                if content in holders.values():
+                    violations.append((kind, content))
+                result = operation()
+                if outermost and after_free is not None:
+                    after_free()
+                return result
+            finally:
+                racing.pop()
+
+        def unlink(path, *args, **kwargs):
+            return free("unlink", path, lambda: real_unlink(path, *args, **kwargs))
+
+        def rename(source, target, *args, **kwargs):
+            return free("rename", source, lambda: real_rename(source, target, *args, **kwargs))
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(os, "unlink", unlink))
+            stack.enter_context(mock.patch.object(os, "rename", rename))
+            if link_error is not None:
+                stack.enter_context(mock.patch.object(os, "link", side_effect=link_error))
+            yield violations
+
+    def racer(self, helper, name, holders, log):
+        """Return a caller that takes the lock if it frees within a short deadline."""
+
+        def run():
+            saved = helper.LOCK_TIMEOUT_SECONDS
+            helper.LOCK_TIMEOUT_SECONDS = 0.2
+            try:
+                record = helper._acquire_lock("codex")
+            except helper.InstanceError:
+                log.append((name, "waited"))
+                return None
+            finally:
+                helper.LOCK_TIMEOUT_SECONDS = saved
+            holders[name] = record
+            log.append((name, "acquired"))
+            return record
+
+        return run
+
+    def test_a_stale_break_never_frees_the_name_of_a_live_lock(self):
+        """Two breakers judge one stale lock; the slower never removes the lock that replaced it.
+
+        Between the slower breaker's last check and its removal, the faster one
+        frees the stale lock and caller A asks for the lock.  Right after the
+        slower breaker frees the name, either caller C asks for it or A finishes
+        and releases.  A live lock is never removed or moved, at most one caller
+        ever holds the lock, and a released lock never comes back.
+        """
+
+        for label, link_error in self.link_cases():
+            for after in ("third caller", "owner releases"):
+                with self.subTest(label, after=after):
+                    helper = self.in_process_helper()
+                    helper.LOCK_TIMEOUT_SECONDS = 0.6
+                    self.make_stale_lock(helper)
+                    holders, log = {}, []
+                    real_inspect = helper._inspect_lock
+                    lock = os.path.abspath(str(self.lock_file()))
+                    checks = []
+
+                    def last_check(path, *args, **kwargs):
+                        state = real_inspect(path, *args, **kwargs)
+                        if os.path.abspath(path) == lock:
+                            checks.append(state)
+                            if len(checks) == 2:
+                                self.racer(helper, "A", holders, log)()
+                        return state
+
+                    def after_free():
+                        if after == "third caller":
+                            self.racer(helper, "C", holders, log)()
+                        elif "A" in holders:
+                            helper._release_lock("codex", holders.pop("A"))
+                            log.append(("A", "released"))
+
+                    with self.racing_lock_removals(holders, after_free=after_free,
+                                                   link_error=link_error) as violations, \
+                            mock.patch.object(helper, "_inspect_lock", last_check):
+                        try:
+                            holders["B"] = helper._acquire_lock("codex")
+                            log.append(("B", "acquired"))
+                        except helper.InstanceError:
+                            log.append(("B", "waited"))
+
+                    self.assertEqual(violations, [], log)
+                    self.assertLessEqual(len(holders), 1, log)
+                    if holders:
+                        (record,) = holders.values()
+                        self.assertEqual(self.lock_file().read_bytes(), record, log)
+                    for name in list(holders):
+                        helper._release_lock("codex", holders.pop(name))
+                    self.assertEqual(sorted(path.name for path in (self.data_root / "codex").iterdir()),
+                                     [], log)
+
+    def test_a_release_never_removes_a_lock_that_replaced_it(self):
+        """A holder past the stale window releases while another caller breaks its lock.
+
+        Between the release's check of its own record and its unlink, caller C
+        judges the lock stale and asks for it.  The release never removes C's
+        lock, and C never gets in before the release has finished.
+        """
+
+        for label, link_error in self.link_cases():
+            with self.subTest(label):
+                helper = self.in_process_helper()
+                holders, log = {}, []
+                mine = helper._acquire_lock("codex")
+                old = time.time() - 2 * helper.LOCK_STALE_SECONDS
+                os.utime(self.lock_file(), (old, old))
+                with self.racing_lock_removals(holders,
+                                               before_free=self.racer(helper, "C", holders, log),
+                                               link_error=link_error) as violations:
+                    helper._release_lock("codex", mine)
+
+                self.assertEqual(violations, [], log)
+                if holders:
+                    self.assertEqual(self.lock_file().read_bytes(), holders["C"], log)
+                    helper._release_lock("codex", holders.pop("C"))
+                self.assertEqual(sorted(path.name for path in (self.data_root / "codex").iterdir()),
+                                 [], log)
+
+    def guard_file(self):
+        """Return the path of the guard every removal of the codex lock runs inside."""
+
+        return self.data_root / "codex" / "instance.lock.break"
+
+    @contextlib.contextmanager
+    def clock_jump(self, helper, seconds):
+        """Make the helper's wall clock jump ``seconds`` ahead, and the guard file that old.
+
+        This is what a system sleep or a forward clock adjustment looks like to a
+        caller: every age it measures is suddenly ``seconds`` larger.  The
+        monotonic clock that bounds waiting is left alone.
+        """
+
+        real_time = time.time
+        if self.guard_file().exists():
+            old = real_time() - seconds
+            os.utime(self.guard_file(), (old, old))
+        jumped = types.SimpleNamespace(time=lambda: real_time() + seconds,
+                                       monotonic=time.monotonic, sleep=time.sleep)
+        with mock.patch.object(helper, "time", jumped):
+            yield
+
+    def test_a_paused_remover_keeps_the_guard_and_its_check_stays_true(self):
+        """A remover that pauses inside the guard after its check keeps the guard.
+
+        While it is paused the clock jumps 30 days, as after a system sleep, and
+        another caller finds the lock stale.  That caller keeps waiting, because
+        a live holder keeps the guard however long it is paused, so the lock the
+        remover unlinks when it resumes is still the stale one it checked, never
+        the other caller's new lock.
+        """
+
+        helper = self.in_process_helper()
+        helper.LOCK_TIMEOUT_SECONDS = 2.0
+        self.make_stale_lock(helper)
+        holders, log = {}, []
+        real_inspect = helper._inspect_lock
+        lock = os.path.abspath(str(self.lock_file()))
+        checks = []
+
+        def paused(path, *args, **kwargs):
+            state = real_inspect(path, *args, **kwargs)
+            if os.path.abspath(path) == lock:
+                checks.append(state)
+                if len(checks) == 2:
+                    with self.clock_jump(helper, 30 * 86400):
+                        self.racer(helper, "B", holders, log)()
+            return state
+
+        with self.racing_lock_removals(holders) as violations, \
+                mock.patch.object(helper, "_inspect_lock", paused):
+            holders["A"] = helper._acquire_lock("codex")
+
+        self.assertEqual(violations, [], log)
+        self.assertEqual(log, [("B", "waited")])
+        self.assertEqual(self.lock_file().read_bytes(), holders["A"])
+        helper._release_lock("codex", holders.pop("A"))
+        self.assertEqual(sorted(path.name for path in (self.data_root / "codex").iterdir()), [])
+
+    def test_a_live_guard_holds_back_every_removal_at_any_age(self):
+        """While a live holder has the guard no lock is broken or released.
+
+        The guard file is 30 days old and the clock has jumped 30 days, as after
+        a system sleep: no age ever takes the guard from a live holder.
+        """
+
+        helper = self.in_process_helper()
+        helper.LOCK_TIMEOUT_SECONDS = 0.3
+        lock = str(self.lock_file())
+        held = helper._take_guard(lock, time.monotonic() + 1)
+        self.assertIsNotNone(held)
+        with self.clock_jump(helper, 30 * 86400):
+            self.make_stale_lock(helper)
+            with self.assertRaises(helper.InstanceError) as raised:
+                helper._acquire_lock("codex")
+            self.assertEqual(raised.exception.code, "instance_lock_timeout")
+            self.assertEqual(self.lock_file().read_bytes(), b"")
+            self.assertFalse(helper.forget_instance("codex"))
+            self.assertEqual(self.lock_file().read_bytes(), b"")
+
+            # A release is never done outside the guard: the lock is left for the stale rules.
+            os.unlink(self.lock_file())
+            mine = helper._acquire_lock("codex")
+            helper._release_lock("codex", mine)
+            self.assertEqual(self.lock_file().read_bytes(), mine)
+
+        # Its holder lets go; then the release goes through and nothing is left.
+        helper._drop_guard(lock, held)
+        helper._release_lock("codex", mine)
+        self.assertEqual(sorted(path.name for path in (self.data_root / "codex").iterdir()), [])
+
+    def test_the_guard_of_a_holder_killed_inside_it_is_freed_by_the_system(self):
+        """A remover killed while it holds the guard delays nobody once it is gone."""
+
+        helper = self.in_process_helper()
+        helper.LOCK_TIMEOUT_SECONDS = 0.3
+        environment = dict(os.environ)
+        environment["HIREY_INSTANCE_DATA_DIR"] = str(self.data_root)
+        holder = subprocess.Popen(
+            [sys.executable, "-c", GUARD_HOLDER_SCRIPT, str(HELPER), str(self.lock_file())],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), "held")
+            self.make_stale_lock(helper)
+            with self.assertRaises(helper.InstanceError) as raised:
+                helper.ensure_installation("codex")
+            self.assertEqual(raised.exception.code, "instance_lock_timeout")
+            self.assertEqual(self.lock_file().read_bytes(), b"")
+        finally:
+            holder.kill()
+            holder.communicate(timeout=60)
+
+        # Windows may take a moment to release a terminated process's locks.
+        helper.LOCK_TIMEOUT_SECONDS = 10.0
+        installation = helper.ensure_installation("codex")
+        self.assertEqual(len(installation["installation_ref"]), 32)
+        self.assertEqual(sorted(path.name for path in (self.data_root / "codex").iterdir()),
+                         ["installation.json"])
+
+    @unittest.skipIf(os.name == "nt", "Windows never removes a file that a caller has open")
+    def test_a_waiter_never_holds_a_guard_file_removed_under_it(self):
+        """A caller that locks the old guard file never holds the guard beside its new holder.
+
+        Between a waiter's open and its lock, the holder lets go (removing the
+        file while it still holds it) and a third caller takes the guard on a
+        new file.  The waiter's lock on the old file succeeds, but the name no
+        longer refers to that file, so the waiter does not hold the guard.
+        """
+
+        helper = self.in_process_helper()
+        lock = str(self.lock_file())
+        first = helper._take_guard(lock, time.monotonic() + 1)
+        real_lock = helper._lock_guard_file
+        seen = {}
+
+        def holder_hands_over_first(handle, guard):
+            if not seen:
+                seen["old"] = os.fstat(handle).st_ino
+                helper._drop_guard(lock, first)
+                seen["third"] = helper._take_guard(lock, time.monotonic() + 1)
+            return real_lock(handle, guard)
+
+        with mock.patch.object(helper, "_lock_guard_file", holder_hands_over_first):
+            waiter = helper._take_guard(lock, time.monotonic() + 0.3)
+        self.assertIsNone(waiter)
+        self.assertIsNotNone(seen["third"])
+        self.assertNotEqual(self.guard_file().stat().st_ino, seen["old"])
+        self.assertEqual(self.guard_file().stat().st_ino, os.fstat(seen["third"]).st_ino)
+        helper._drop_guard(lock, seen["third"])
+        self.assertFalse(self.guard_file().exists())
+
+    def test_a_file_system_that_cannot_lock_files_fails_closed_before_writing(self):
+        """Without file locks the helper says so at once and writes no instance state."""
+
+        helper = self.in_process_helper()
+        if os.name == "nt":
+            module, function, codes = helper.msvcrt, "locking", (errno.EINVAL,)
+        else:
+            module, function, codes = helper.fcntl, "flock", (errno.ENOLCK, errno.EOPNOTSUPP,
+                                                             errno.EINVAL)
+        for code in codes:
+            with self.subTest(errno=errno.errorcode[code]):
+                with mock.patch.object(module, function, side_effect=OSError(code, os.strerror(code))), \
+                        self.assertRaises(helper.InstanceError) as raised:
+                    helper.ensure_profile("codex", PROFILE_A)
+                self.assertEqual(raised.exception.code, "instance_lock_unsupported")
+                # At most the empty guard file the check opened; no lock, installation or key.
+                self.assertEqual([path.name for path in (self.data_root / "codex").iterdir()
+                                  if path.name != "instance.lock.break"], [])
+
+    def test_forget_removes_a_stale_lock_but_never_a_live_one(self):
+        """Forget is a removal like any other: a lock of a call still running stays."""
+
+        helper = self.in_process_helper()
+        helper.ensure_installation("codex")
+        mine = helper._acquire_lock("codex")
+        self.assertTrue(helper.forget_instance("codex"))
+        self.assertEqual(self.lock_file().read_bytes(), mine)
+        self.assertFalse(self.installation_file().exists())
+        helper._release_lock("codex", mine)
+
+        self.make_stale_lock(helper)
+        self.assertTrue(helper.forget_instance("codex"))
+        self.assertFalse((self.data_root / "codex").exists())
+
+    def test_a_reader_waits_out_a_record_that_is_still_empty(self):
+        """A record created without hard links is briefly empty; readers wait, then fail closed."""
+
+        helper = self.in_process_helper()
+        helper.ensure_installation("codex")
+        content = self.installation_file().read_bytes()
+        self.installation_file().write_bytes(b"")
+        writer = threading.Timer(0.2, self.installation_file().write_bytes, args=(content,))
+        writer.start()
+        try:
+            installation = helper.read_installation("codex")
+        finally:
+            writer.join()
+        self.assertEqual(installation["installation_ref"], json.loads(content)["installation_ref"])
+
+        self.installation_file().write_bytes(b"")
+        helper.RECORD_EMPTY_RETRY_SECONDS = 0.2
+        with self.assertRaises(helper.InstanceError) as raised:
+            helper.read_installation("codex")
+        self.assertEqual(raised.exception.code, "instance_state_invalid")
 
     # -- forget -------------------------------------------------------------
 
