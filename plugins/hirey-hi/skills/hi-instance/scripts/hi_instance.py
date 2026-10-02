@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import errno
 import hashlib
 import json
 import os
@@ -46,6 +47,17 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
+
+# The removal guard's operating-system file lock: ``fcntl`` on POSIX, ``msvcrt``
+# on Windows.  Each import fails on the other platform.
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
 
 # --- Frozen local contract -------------------------------------------------
 
@@ -100,12 +112,64 @@ PROFILE_KEY_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 INSTANCE_ID_PATTERN = re.compile(r"^agi_[a-z0-9_-]{12,64}$")
 
 # A first call that loses the initialization race waits for the winner instead of
-# creating a second key pair.  A lock older than the stale window belongs to a
-# crashed process and may be broken, so a killed run can never wedge the helper.
+# creating a second key pair.  The lock file appears atomically with its owner's
+# pid and a random token already inside it, so a waiter never sees an ownerless
+# lock.  A lock whose owner pid is gone, or which is older than the stale window,
+# belongs to a crashed or wedged process and may be broken, so a killed run can
+# never wedge the helper.  A lock whose content cannot be read as a complete owner
+# record (for example one an older helper created but had not yet written) is
+# treated as live until the stale window, never as broken.
+#
+# Taking the lock needs only its free name.  Every removal of the lock (breaking a
+# stale one, a normal release, forget) runs inside one guard,
+# ``instance.lock.break``.  Inside it the remover checks the lock that is there
+# now and unlinks it; no other remover can free the name in between, and a new
+# lock can only take a free name, so a live lock is never removed or moved.
+#
+# The guard is an operating-system lock on the file ``instance.lock.break``:
+# ``flock`` on POSIX, ``msvcrt.locking`` on Windows.  The system frees it when its
+# holder exits or is killed, and never takes it from a live holder, however long
+# that holder is paused or asleep and whatever the clock does.  On a file system
+# that cannot lock files the helper fails closed before it writes any state,
+# rather than remove a lock unguarded.
 LOCK_TIMEOUT_SECONDS = 20.0
 LOCK_STALE_SECONDS = 60.0
+LOCK_GUARD_SUFFIX = ".break"
 LOCK_POLL_MIN_SECONDS = 0.02
 LOCK_POLL_MAX_SECONDS = 0.05
+LOCK_RECORD_PATTERN = re.compile(rb"\A([1-9][0-9]{0,9})\n(?:([0-9a-f]{32})\n)?\Z")
+LOCK_RECORD_MAX_BYTES = 128
+
+# Errors that mean "this file system cannot make hard links" rather than "the
+# name is taken".  Only then does creation fall back: the lock to O_EXCL, a new
+# record to the lock alone, as before.
+LINK_UNSUPPORTED_ERRNOS = frozenset(
+    code for code in (getattr(errno, name, None) for name in
+                      ("EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"))
+    if code is not None
+)
+
+# Windows keeps a deleted lock's name until its last handle closes and reports
+# that name as access denied, so there a PermissionError means "still taken".
+LOCK_NAME_HELD_ON_PERMISSION_ERROR = os.name == "nt"
+
+# Errors from a non-blocking guard lock that mean "another caller holds it", and
+# errors that mean "this file system cannot lock files".  Any other error is a
+# real failure and is raised.
+GUARD_BUSY_ERRNOS = frozenset(
+    code for code in (getattr(errno, name, None) for name in
+                      ("EAGAIN", "EWOULDBLOCK", "EACCES"))
+    if code is not None
+)
+GUARD_UNSUPPORTED_ERRNOS = frozenset(
+    code for code in (getattr(errno, name, None) for name in
+                      ("ENOLCK", "ENOTSUP", "EOPNOTSUPP", "EINVAL", "ENOSYS"))
+    if code is not None
+)
+
+# Without hard links a new record is created exclusively and then written in one
+# write, so a reader can briefly find it empty; it waits that moment out.
+RECORD_EMPTY_RETRY_SECONDS = 1.0
 
 # Typed exit codes.  Every failure path is distinguishable without parsing text.
 EXIT_OK = 0
@@ -855,9 +919,15 @@ def _json_file_payload(path: str, description: str) -> Optional[dict]:
 
     if not os.path.exists(path):
         return None
+    deadline = time.monotonic() + RECORD_EMPTY_RETRY_SECONDS
     try:
-        with open(path, "r", encoding="utf-8") as handle:
-            payload = json.load(handle)
+        while True:
+            with open(path, "r", encoding="utf-8") as handle:
+                text = handle.read()
+            if text or time.monotonic() >= deadline:
+                break
+            time.sleep(random.uniform(LOCK_POLL_MIN_SECONDS, LOCK_POLL_MAX_SECONDS))
+        payload = json.loads(text)
     except (OSError, ValueError) as exc:
         raise InstanceError(
             "instance_state_invalid",
@@ -1122,15 +1192,24 @@ def iter_profiles(host_type: str) -> list[dict]:
     return profiles
 
 
-def _atomic_write_json(path: str, record: Mapping[str, Any]) -> dict:
-    """Write one JSON record atomically with owner-only permissions.
+def _remove_quietly(path: str) -> None:
+    """Remove one file if it exists, ignoring any failure."""
+
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _temporary_json(path: str, record: Mapping[str, Any]) -> str:
+    """Write one JSON record to a new owner-only temporary file beside ``path``.
 
     Args:
-        path: Destination path.
+        path: The final destination the temporary file will be moved to.
         record: The JSON-serializable record.
 
     Returns:
-        The record that was written.
+        The temporary file path, fully written and flushed to disk.
     """
 
     _ensure_directory(os.path.dirname(path))
@@ -1142,14 +1221,125 @@ def _atomic_write_json(path: str, record: Mapping[str, Any]) -> dict:
             stream.flush()
             os.fsync(stream.fileno())
         _protect_file(temporary)
+    except BaseException:
+        _remove_quietly(temporary)
+        raise
+    return temporary
+
+
+def _atomic_write_json(path: str, record: Mapping[str, Any]) -> dict:
+    """Write one JSON record atomically with owner-only permissions.
+
+    Args:
+        path: Destination path.
+        record: The JSON-serializable record.
+
+    Returns:
+        The record that was written.
+    """
+
+    temporary = _temporary_json(path, record)
+    try:
         os.replace(temporary, path)
     except BaseException:
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
+        _remove_quietly(temporary)
         raise
     return dict(record)
+
+
+def _place_new_file(temporary: str, path: str) -> Optional[bool]:
+    """Give a finished temporary file the name ``path`` only if that name is free.
+
+    The name appears atomically with the complete content, and an existing file
+    at ``path`` is never replaced.  The temporary name is gone afterwards in every
+    case.
+
+    Args:
+        temporary: A fully written file in the same directory as ``path``.
+        path: The destination name.
+
+    Returns:
+        True when this call created ``path``; False when the name was already
+        taken; None when this file system cannot create a name exclusively and
+        atomically (it has no hard links), so the caller must fall back.
+
+    Raises:
+        OSError: Any other failure.  On Windows a ``PermissionError`` means the
+            name still belongs to a file that is being deleted.
+    """
+
+    try:
+        if os.name == "nt":
+            # A Windows rename never replaces an existing name.
+            os.rename(temporary, path)
+        elif hasattr(os, "link"):
+            os.link(temporary, path)
+        else:
+            return None
+        return True
+    except FileExistsError:
+        return False
+    except OSError as exc:
+        if os.name != "nt" and exc.errno in LINK_UNSUPPORTED_ERRNOS:
+            return None
+        raise
+    finally:
+        _remove_quietly(temporary)
+
+
+def _publish_new_json(path: str, record: Mapping[str, Any]) -> bool:
+    """Create one JSON record file, never replacing a record that already exists.
+
+    This is what keeps one installation ref and one key pair per identity even if
+    two calls ever reach creation together: the second call finds the first
+    call's file and must adopt it instead of overwriting it.
+
+    Args:
+        path: Destination path.
+        record: The JSON-serializable record.
+
+    Returns:
+        True when this call created the file; False when a file already existed
+        and was left untouched.
+    """
+
+    created = _place_new_file(_temporary_json(path, record), path)
+    if created is not None:
+        return created
+    # No hard links: claim the name exclusively and write the whole record in one
+    # write.  A reader that meets the brief empty file waits for the content.
+    data = (json.dumps(record, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    return _create_exclusive(path, data, durable=True)
+
+
+def _create_exclusive(path: str, data: bytes, durable: bool = False) -> bool:
+    """Create ``path`` holding ``data`` only if the name is free, without hard links.
+
+    Args:
+        path: Destination path.
+        data: The complete content, written in one write.
+        durable: Whether to flush the content to disk before returning.
+
+    Returns:
+        True when this call created the file; False when the name was taken.
+    """
+
+    try:
+        handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return False
+    try:
+        if os.write(handle, data) != len(data):
+            raise OSError(errno.EIO, "short write", path)
+        if durable:
+            os.fsync(handle)
+    except BaseException:
+        os.close(handle)
+        _remove_quietly(path)
+        raise
+    os.close(handle)
+    _protect_file(path)
+    return True
 
 
 def write_installation(host_type: str, installation: Mapping[str, Any]) -> dict:
@@ -1210,7 +1400,35 @@ def _read_or_create_installation_locked(host_type: str) -> dict:
     existing = read_installation(host_type)
     if existing is not None:
         return existing
-    return write_installation(host_type, _new_installation(host_type, read_legacy_instance(host_type)))
+    installation = _new_installation(host_type, read_legacy_instance(host_type))
+    if _publish_new_json(installation_path(host_type), installation):
+        return dict(installation)
+    # Another call created the installation first: adopt it, never replace it.
+    return _adopt_existing(read_installation(host_type), "installation")
+
+
+def _adopt_existing(record: Optional[dict], description: str) -> dict:
+    """Return a record another call created first, or fail closed if it vanished.
+
+    Args:
+        record: The re-read record, or ``None`` when it no longer exists.
+        description: Human-readable label used in a typed failure.
+
+    Returns:
+        The existing record.
+
+    Raises:
+        InstanceError: With ``instance_state_invalid`` when the record that
+            blocked creation disappeared before it could be read.
+    """
+
+    if record is None:
+        raise InstanceError(
+            "instance_state_invalid",
+            "the local %s changed while this call was creating it; retry" % description,
+            EXIT_STATE_INVALID,
+        )
+    return record
 
 
 def _new_profile(host_type: str, key: str, signer: str, seed: bytes, public_key: str,
@@ -1246,6 +1464,11 @@ def _create_profile_locked(host_type: str, key: str, display_name: Optional[str]
     this installation ref, the exact fingerprint the legacy file holds.  Every
     other identity gets a fresh key of its own, and the legacy file stays
     ``unclaimed`` so its true owner can still adopt it on a later login.
+
+    An existing profile file is never replaced here: if another call created
+    this identity's profile first, its key pair is the one returned.  The
+    installation is marked ``claimed`` only after this call's profile, holding
+    the legacy key, actually exists.
     """
 
     installation = _read_or_create_installation_locked(host_type)
@@ -1263,111 +1486,423 @@ def _create_profile_locked(host_type: str, key: str, display_name: Optional[str]
                                base64url_decode(legacy["private_key_seed"]),
                                legacy["public_key"],
                                display_name or legacy["display_name"], "legacy_migrated")
-        installation["legacy_status"] = LEGACY_CLAIMED
-        write_installation(host_type, installation)
     else:
         signer = resolve_signer()
         seed = generate_seed()
         profile = _new_profile(host_type, key, signer, seed,
                                derive_public_key(signer, seed), display_name, "created")
-    return write_profile(host_type, profile)
+    if not _publish_new_json(profile_path(host_type, key), profile):
+        # Another call created this identity's key first: adopt it, never replace it.
+        return _adopt_existing(read_profile(host_type, key), "profile")
+    if inherit:
+        installation["legacy_status"] = LEGACY_CLAIMED
+        write_installation(host_type, installation)
+    return dict(profile)
 
 
-def _acquire_lock(host_type: str) -> int:
+def _owner_record() -> bytes:
+    """Return a new complete owner record: this process's pid and a random token."""
+
+    return ("%d\n%s\n" % (os.getpid(), os.urandom(16).hex())).encode("ascii")
+
+
+def _acquire_lock(host_type: str) -> bytes:
     """Take the exclusive initialization lock for one host, or fail closed.
+
+    The lock file appears atomically with this process's complete owner record
+    (pid and a random token) already in it.  A waiter breaks a lock only when it
+    can tell the owner is gone (dead pid, or older than the stale window), and
+    only inside the removal guard.  Every retry path is bounded by the same
+    deadline.
 
     Args:
         host_type: A validated client-reported host type.
 
     Returns:
-        The open lock file descriptor.
+        The exact owner record written into the lock, to pass to
+        ``_release_lock``.
 
     Raises:
-        InstanceError: With ``instance_lock_timeout`` when the lock never frees.
+        InstanceError: With ``instance_lock_timeout`` when the lock never frees,
+            or ``instance_lock_unsupported`` when this file system cannot hold
+            the removal guard.
     """
 
     path = lock_path(host_type)
+    # A file system that cannot lock files fails here, before any state exists,
+    # rather than at the release after this call has written its records.
+    probe = _try_guard(path)
+    if probe is not None:
+        _drop_guard(path, probe)
+    record = _owner_record()
     deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
     while True:
-        try:
-            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError:
-            if _lock_is_stale(path):
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
-                continue
-            if time.monotonic() >= deadline:
-                raise InstanceError(
-                    "instance_lock_timeout",
-                    "another process is still creating the local instance; retry shortly",
-                    EXIT_LOCK_TIMEOUT,
-                )
+        if _create_lock_file(path, record):
+            return record
+        state = _inspect_lock(path)
+        retry_now = state == "gone" or (state == "stale" and _remove_lock(path, None, deadline))
+        if time.monotonic() >= deadline:
+            raise InstanceError(
+                "instance_lock_timeout",
+                "another process is still creating the local instance; retry shortly",
+                EXIT_LOCK_TIMEOUT,
+            )
+        if not retry_now:
             time.sleep(random.uniform(LOCK_POLL_MIN_SECONDS, LOCK_POLL_MAX_SECONDS))
-            continue
-        try:
-            os.write(handle, ("%d\n" % os.getpid()).encode("ascii"))
-        except OSError:
-            pass
-        return handle
 
 
-def _lock_is_stale(path: str) -> bool:
-    """Return whether an existing lock belongs to a dead or wedged process.
+def _create_lock_file(path: str, record: bytes) -> bool:
+    """Create the lock file holding ``record``, or report that it is taken.
+
+    Args:
+        path: The lock file path.
+        record: The complete owner record.
+
+    Returns:
+        True when this call now holds the lock; False when another holder has it.
+    """
+
+    handle, temporary = tempfile.mkstemp(prefix=".", suffix=".tmp", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(record)
+    except BaseException:
+        _remove_quietly(temporary)
+        raise
+    try:
+        created = _place_new_file(temporary, path)
+    except PermissionError:
+        if LOCK_NAME_HELD_ON_PERMISSION_ERROR:
+            return False
+        raise
+    if created is not None:
+        return created
+    # This file system has no hard links: create exclusively, then write.  A
+    # waiter that reads the brief empty file treats it as live, never as broken.
+    return _create_exclusive(path, record)
+
+
+def _read_lock_owner(path: str) -> Optional[int]:
+    """Return the owner pid recorded in one lock, or ``None`` when it is not complete.
 
     Args:
         path: The lock file path.
 
     Returns:
-        True when the lock may be broken safely.
+        The pid of a complete owner record; ``None`` for a missing, unreadable,
+        empty, partial or otherwise unparseable lock.
+    """
+
+    try:
+        with open(path, "rb") as handle:
+            content = handle.read(LOCK_RECORD_MAX_BYTES + 1)
+    except OSError:
+        return None
+    match = LOCK_RECORD_PATTERN.match(content)
+    return int(match.group(1)) if match else None
+
+
+def _inspect_lock(path: str) -> str:
+    """Classify an existing lock as ``gone``, ``live`` or ``stale``.
+
+    Anything uncertain is ``live``: the caller then waits, bounded by its
+    deadline, and the stale window still frees a lock whose owner died before it
+    could be identified.
+
+    Args:
+        path: The lock file path.
+
+    Returns:
+        ``gone``, ``live`` or ``stale``.
     """
 
     try:
         info = os.stat(path)
+    except FileNotFoundError:
+        return "gone"
     except OSError:
-        return True
+        # Windows reports a lock that is being deleted as access denied.
+        return "live"
     if time.time() - info.st_mtime > LOCK_STALE_SECONDS:
-        return True
+        return "stale"
     if os.name == "nt":
-        return False
-    try:
-        with open(path, "r", encoding="ascii") as handle:
-            pid = int(handle.read().strip() or "0")
-    except (OSError, ValueError):
-        return False
-    if pid <= 0:
-        return True
+        # Windows has no harmless liveness probe (os.kill terminates the
+        # process), and reading the file would hold a handle that blocks the
+        # owner's delete, so age alone decides there.
+        return "live"
+    pid = _read_lock_owner(path)
+    if pid is None:
+        return "live"
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
-        return True
-    except PermissionError:
-        return False
-    except OSError:
-        return True
-    return False
+        return "stale"
+    except (OSError, OverflowError):
+        # PermissionError: the pid is alive under another user.
+        return "live"
+    return "live"
 
 
-def _release_lock(host_type: str, handle: int) -> None:
-    """Release one initialization lock.
+def _unlink(path: str) -> bool:
+    """Unlink one file and report whether its name is now free.
 
     Args:
-        host_type: A validated client-reported host type.
-        handle: The open lock file descriptor.
+        path: The file path.
+
+    Returns:
+        True when the file was removed or was already absent; False when it
+        could not be removed.
+    """
+
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        return False
+    return True
+
+
+def _remove_lock(path: str, record: Optional[bytes], deadline: float) -> bool:
+    """Remove the lock inside the removal guard: a stale lock, or the caller's own.
+
+    Inside the guard no other remover can free the lock name, and a new lock can
+    only appear on a free name, so the lock checked here is the lock unlinked.  A
+    live lock is never removed or moved.
+
+    Args:
+        path: The lock file path.
+        record: The caller's own owner record, to release its lock; ``None`` to
+            remove the lock only if it is stale.
+        deadline: When to stop waiting for the guard.
+
+    Returns:
+        True when the lock is gone (removed here, or already absent); False when
+        it is live, belongs to another holder, could not be removed, or the guard
+        did not free before the deadline.
+    """
+
+    guard = _take_guard(path, deadline)
+    if guard is None:
+        return False
+    try:
+        if record is None:
+            state = _inspect_lock(path)
+            if state != "stale":
+                return state == "gone"
+        else:
+            try:
+                with open(path, "rb") as handle:
+                    content = handle.read(LOCK_RECORD_MAX_BYTES + 1)
+            except FileNotFoundError:
+                return True
+            except OSError:
+                # Unverifiable: release it as before rather than wedge every later call.
+                content = record
+            if content != record:
+                # This lock was broken as stale and another call holds it now.
+                return False
+        return _unlink(path)
+    finally:
+        _drop_guard(path, guard)
+
+
+def _take_guard(path: str, deadline: float) -> Optional[int]:
+    """Take the guard that every removal of the lock at ``path`` runs inside.
+
+    The guard is an operating-system lock on ``<path>.break``.  The system frees
+    it when its holder exits or is killed and never takes it from a live
+    holder, so a slow, paused or sleeping holder simply keeps it, and a waiter
+    stops at its deadline instead.
+
+    Args:
+        path: The lock file path.
+        deadline: When to stop waiting.
+
+    Returns:
+        The open guard file, to pass to ``_drop_guard``; ``None`` when the guard
+        did not free before the deadline.
+
+    Raises:
+        InstanceError: With ``instance_lock_unsupported`` when this file system
+            cannot lock files.
+    """
+
+    while True:
+        handle = _try_guard(path)
+        if handle is not None:
+            return handle
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(random.uniform(LOCK_POLL_MIN_SECONDS, LOCK_POLL_MAX_SECONDS))
+
+
+def _try_guard(path: str) -> Optional[int]:
+    """Try once, without waiting, to take the guard of the lock at ``path``.
+
+    On POSIX the holder removes the guard file while it still holds it (see
+    ``_drop_guard``), so a caller that opened the file earlier can lock a file
+    that no longer has the name.  This call therefore holds the guard only when
+    the name still refers to the very file it locked.  Windows never removes a
+    file that any caller has open, so there the file locked is always the one
+    at the name.
+
+    Args:
+        path: The lock file path.
+
+    Returns:
+        The open, locked guard file; ``None`` when another caller holds the
+        guard.
+
+    Raises:
+        InstanceError: With ``instance_lock_unsupported`` when this file system
+            cannot lock files.
+    """
+
+    guard = path + LOCK_GUARD_SUFFIX
+    try:
+        handle = os.open(guard, os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o600)
+    except PermissionError:
+        # Windows reports a guard file that is being deleted as access denied.
+        if LOCK_NAME_HELD_ON_PERMISSION_ERROR:
+            return None
+        raise
+    try:
+        if _lock_guard_file(handle, guard) and _names_this_file(guard, handle):
+            return handle
+    except BaseException:
+        _close_unheld_guard(guard, handle)
+        raise
+    _close_unheld_guard(guard, handle)
+    return None
+
+
+def _lock_guard_file(handle: int, guard: str) -> bool:
+    """Take the operating-system lock on the open guard file without waiting.
+
+    Args:
+        handle: The open guard file.
+        guard: The guard file path, for the error message.
+
+    Returns:
+        True when this call now holds the lock; False when another caller does.
+
+    Raises:
+        InstanceError: With ``instance_lock_unsupported`` when this file system
+            cannot lock files.
+    """
+
+    try:
+        if msvcrt is not None:
+            # Lock the first byte; Windows allows a lock past the end of a file.
+            msvcrt.locking(handle, msvcrt.LK_NBLCK, 1)
+        elif fcntl is not None:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            raise OSError(errno.ENOSYS, "no file locking on this platform", guard)
+    except OSError as exc:
+        if exc.errno in GUARD_BUSY_ERRNOS:
+            return False
+        if exc.errno in GUARD_UNSUPPORTED_ERRNOS:
+            raise InstanceError(
+                "instance_lock_unsupported",
+                "the file system that holds %s cannot lock files, so the local instance "
+                "cannot be changed safely there; keep the Hi data directory on a local disk"
+                % os.path.dirname(guard),
+                EXIT_FAILURE,
+            ) from exc
+        raise
+    return True
+
+
+def _names_this_file(guard: str, handle: int) -> bool:
+    """Return whether the guard path still names the open file ``handle``.
+
+    Args:
+        guard: The guard file path.
+        handle: The open guard file.
+
+    Returns:
+        True when the path names this very file.
+    """
+
+    if os.name == "nt":
+        return True
+    try:
+        named = os.stat(guard)
+    except FileNotFoundError:
+        return False
+    opened = os.fstat(handle)
+    return (named.st_dev, named.st_ino) == (opened.st_dev, opened.st_ino)
+
+
+def _close_unheld_guard(guard: str, handle: int) -> None:
+    """Close a guard file this call does not hold.
+
+    On Windows the file is then removed if nobody else has it open: a holder
+    always has it open and Windows never removes such a file, so this never
+    removes a held guard, and an idle guard file never outlives its last user.
+    On POSIX only a holder removes the file.
+
+    Args:
+        guard: The guard file path.
+        handle: The open guard file.
 
     Returns:
         None.
     """
 
-    try:
+    os.close(handle)
+    if os.name == "nt":
+        _remove_quietly(guard)
+
+
+def _drop_guard(path: str, handle: int) -> None:
+    """Let go of the guard and remove its file.
+
+    On POSIX the file is removed while it is still locked.  This holder checked
+    that the name refers to its own file, and only a holder ever removes the
+    name, so the file removed is this holder's own; a caller that locks the old
+    file afterwards finds the name gone or reused and tries again.  On Windows
+    the lock is released and the file closed first, then the file is removed
+    if nobody else has it open.
+
+    Args:
+        path: The lock file path.
+        handle: The open guard file ``_take_guard`` returned.
+
+    Returns:
+        None.
+    """
+
+    guard = path + LOCK_GUARD_SUFFIX
+    if os.name == "nt":
+        try:
+            msvcrt.locking(handle, msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass  # Closing the file releases the lock as well.
+        _close_unheld_guard(guard, handle)
+    else:
+        _remove_quietly(guard)
         os.close(handle)
-    except OSError:
-        pass
-    try:
-        os.unlink(lock_path(host_type))
-    except OSError:
-        pass
+
+
+def _release_lock(host_type: str, record: bytes) -> None:
+    """Release one initialization lock, but never another holder's lock.
+
+    The release runs inside the removal guard like every other removal.  If the
+    guard never frees before the deadline, the lock is left for the stale rules
+    to free rather than removed unguarded.
+
+    Args:
+        host_type: A validated client-reported host type.
+        record: The owner record ``_acquire_lock`` returned.
+
+    Returns:
+        None.
+    """
+
+    _remove_lock(lock_path(host_type), record, time.monotonic() + LOCK_TIMEOUT_SECONDS)
 
 
 def ensure_installation(host_type: str) -> dict:
@@ -1526,12 +2061,18 @@ def forget_instance(host_type: str, profile_key_value: Optional[str] = None) -> 
             pass
         return removed
     removed = False
-    for path in (installation_path(host_type), instance_path(host_type), lock_path(host_type)):
+    for path in (installation_path(host_type), instance_path(host_type)):
         try:
             os.unlink(path)
             removed = True
         except OSError:
             pass
+    # A live lock belongs to a call that is still running.  Like every removal of
+    # the lock, forget removes only a stale one, inside the removal guard.
+    lock = lock_path(host_type)
+    if _inspect_lock(lock) == "stale" and _remove_lock(
+            lock, None, time.monotonic() + LOCK_TIMEOUT_SECONDS):
+        removed = True
     directory = profiles_dir(host_type)
     if os.path.isdir(directory):
         for name in os.listdir(directory):
