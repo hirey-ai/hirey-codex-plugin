@@ -16,7 +16,7 @@ There is no npm package, local MCP daemon, or manually managed API key.
    browser OAuth page and never needs to type a `codex` command. Saved OAuth credentials are kept;
    only a `legacy_url_only_override` is removed as an authorized connection repair.
 3. Verify `hi_agent_status` and `workspace_workflows` are present, then call `hi_agent_status` with
-   `client_plugin_version: "0.2.21"` and `workspace_workflows` with
+   `client_plugin_version: "0.2.22"` and `workspace_workflows` with
    `action: catalog`. A missing tool after an actual install or update can follow a host loading or
    auth startup failure; it is not proof of anything about credential validity. Inspect the host
    loading state and do a supported reload or start a new Codex session first, then verify the tools
@@ -67,7 +67,7 @@ script `hooks/hirey_inbox_reminder.py`. The hook runs as a `command` handler at
 fixed, trusted `additionalContext` that tells the current Agent to make one
 bounded first-page check of the current Person's authorized Hirey messages
 through the existing `workspace_workflows` `agent_message.list` action
-(`{"types": ["message"], "limit": 20}`). The Agent does not paginate
+(`{"types": ["message", "contact_request"], "limit": 20}`). The Agent does not paginate
 automatically on the reminder and never claims the inbox is empty or fully read
 from that sample; it paginates fully only when the user actually asks to read
 their messages. Bounded sampling can miss older first-pull items beyond the
@@ -141,3 +141,21 @@ plugins/hirey-hi/
 
 This package is generated from `agent-integration/` by
 `node scripts/build-agent-packages.mjs`. Edit the source there, not this copy.
+
+## Reception repair candidate 0.2.22
+
+New-message checks use a non-consuming bound-instance `new_only` preview.
+Regular receives fetch only not-yet-issued messages for that instance; explicit
+history reads retain time filters and pagination. Missing local binding is
+recovered by the bundled signed-instance skill for a verified owner. Core 0321
+and Platform contracts must ship first. Public latest/minimum remain unchanged
+until distribution and real-host acceptance.
+
+## Contact-request reminders
+
+The current candidate also selects `contact_request` alongside `message`, with
+`new_only=true, peek=true`. Only current pending requests addressed to this Person
+are eligible; revoked, blocked, accepted or declined requests are not reminders.
+When that type is present, the single notice is “HiRey 有新的联系申请，需要你处理”.
+The Agent does not accept, decline or acknowledge the request during a reminder.
+The existing session/prompt cadence applies; this does not add an idle wake daemon.

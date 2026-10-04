@@ -15,7 +15,7 @@ Each run prints a fixed, trusted `hookSpecificOutput.additionalContext` that
 tells the current Agent to make one bounded first-page check of the current
 Person's authorized Hirey business messages through the existing
 `workspace_workflows` MCP tool with `action: "agent_message.list"` and payload
-`{"types": ["message"], "limit": 20}`. The Agent does not follow
+`{"types": ["message", "contact_request"], "limit": 20}`. The Agent does not follow
 `page.next_cursor` or paginate automatically on this reminder, and it refreshes
 the first page on each eligible turn. A page boundary is not exhaustion: the
 Agent never claims the inbox is empty or fully read from this bounded sample. It
@@ -119,3 +119,24 @@ This is per-installation control, not a global "all hooks" switch.
   promise exactly-once or continuous monitoring.
 - No backend operation, endpoint, connector, token copy or global hook change
   is added. The existing remote OAuth MCP `hi` connection is reused.
+
+## 2026-10-03 candidate reception repair
+
+The 0.2.22 candidate queries `agent_message.list` with
+`types=[message,contact_request], limit=20, new_only=true, peek=true`. Peek never advances
+instance pull evidence, so the owner can still receive the messages after a
+reminder. Ordinary receives omit peek and atomically advance this instance’s
+issuance evidence; explicit historical queries omit new_only. A verified
+installation with instance_binding_required uses the idempotent hi-instance
+flow before retrying once. This does not sign in an unverified owner or
+automatically mark a Person read. Core 0321 and the new contracts must be
+released before this candidate is distributed. Idle wake is unchanged.
+
+## Contact-request reminders
+
+The current candidate also selects `contact_request` alongside `message`, with
+`new_only=true, peek=true`. Only current pending requests addressed to this Person
+are eligible; revoked, blocked, accepted or declined requests are not reminders.
+When that type is present, the single notice is “HiRey 有新的联系申请，需要你处理”.
+The Agent does not accept, decline or acknowledge the request during a reminder.
+The existing session/prompt cadence applies; this does not add an idle wake daemon.

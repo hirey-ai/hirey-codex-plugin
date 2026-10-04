@@ -25,9 +25,9 @@ try:
 except ImportError:  # pragma: no cover - Windows only.
     fcntl = None
 
-TESTS_DIR = Path(__file__).resolve().parent
-HOOK = TESTS_DIR.parent / "plugins/hirey-hi/hooks/hirey_inbox_reminder.py"
-HOOKS_JSON = TESTS_DIR.parent / "plugins/hirey-hi/hooks/hooks.json"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+HOOK = REPO_ROOT / "plugins/hirey-hi/hooks/hirey_inbox_reminder.py"
+HOOKS_JSON = REPO_ROOT / "plugins/hirey-hi/hooks/hooks.json"
 
 NOTICE = "HiRey 有新消息，可以随时查看"
 STATE_FILE = "inbox_reminder_state.json"
@@ -111,8 +111,11 @@ class InboxReminderHookTests(unittest.TestCase):
         self.assertEqual(output["hookSpecificOutput"]["hookEventName"], "SessionStart")
         self.assertIn(NOTICE, text)
         self.assertIn("agent_message.list", text)
-        self.assertIn('"types": ["message"]', text)
+        self.assertIn('"types": ["message", "contact_request"]', text)
         self.assertIn("first_pull", text)
+        self.assertIn("HiRey 有新的联系申请，需要你处理", text)
+        self.assertIn("Never approve or decline", text)
+        self.assertIn('"peek": true', text)
 
     def test_ascii_transport_is_portable_and_preserves_decoded_notice(self):
         # Windows CI stdout is cp1252. The hook must still exit 0 with valid,
@@ -296,8 +299,9 @@ class InboxReminderHookTests(unittest.TestCase):
                      "http://", "https://", "sk-", "client_secret", "api_key"]
         for pattern in forbidden:
             self.assertNotIn(pattern, text)
-        # Only the single neutral notice may look like message output.
-        self.assertEqual(text.count("HiRey"), 1)
+        # Two fixed notice alternatives; exactly one is emitted for a sample.
+        self.assertEqual(text.count("HiRey"), 2)
+        self.assertIn("one notice", text)
         self.assertNotIn("inbox.get", text)
 
     def test_guidance_is_one_bounded_first_page_sample(self):

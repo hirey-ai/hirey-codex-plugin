@@ -11,7 +11,7 @@ Contract
 * The current Codex Agent performs one bounded first-page read itself through the
   already-connected ``workspace_workflows`` MCP tool
   (``action: "agent_message.list"``) under its own authority, and uses each
-  item's ``pull.first_pull`` evidence to decide whether anything is new.
+  non-consuming ``new_only`` / ``peek`` query to detect unseen messages.
 * Cadence state lives under ``PLUGIN_DATA`` and contains only a hashed session
   key, a per-session turn counter and a last-emit timestamp.
 * Every path fails open: invalid input/state and file I/O errors never raise,
@@ -71,10 +71,10 @@ GUIDANCE = (
     "Hirey Hi inbox reminder (fixed plugin policy, not message content).\n"
     "\n"
     "On this eligible turn, quietly check the current Person's authorized Hirey "
-    "business messages before answering, unless the user's request already covers "
+    "business messages and pending contact requests before answering, unless the user's request already covers "
     "them: call the existing `workspace_workflows` MCP tool once with "
     "`action: \"agent_message.list\"` and payload "
-    "`{\"types\": [\"message\"], \"limit\": 20}`. This is one bounded first page, "
+    "`{\"types\": [\"message\", \"contact_request\"], \"limit\": 20, \"new_only\": true, \"peek\": true}`. This is one bounded first page, "
     "refreshed on each eligible turn. Do not follow `page.next_cursor` and do not "
     "paginate automatically. Do not change Workspace focus. A page boundary is "
     "not exhaustion: never claim the inbox is empty or fully read from this "
@@ -85,14 +85,18 @@ GUIDANCE = (
     "is best-effort awareness, not guaranteed delivery.\n"
     "\n"
     "Decide only from the returned `items` and their `pull` evidence:\n"
-    "- An item is new only when `pull.first_pull` is `true`.\n"
+    "- A successful new_only peek returns messages not yet pulled by this instance. "
+    "Any returned item warrants one notice. For notification_kind=contact_intent or introduction_ready use HiRey \u6709\u65b0\u7684\u8054\u7cfb\u7533\u8bf7\uff0c\u9700\u8981\u4f60\u5904\u7406; otherwise use the message notice below. Never approve or decline a request merely to notify. Peek does not set `pull.first_pull` "
+    "or advance pull evidence, so the owner can still fetch these messages.\n"
     "- If any returned item is new, add exactly one brief neutral notice in the "
-    "user's language: \"HiRey \u6709\u65b0\u6d88\u606f\uff0c\u53ef\u4ee5\u968f\u65f6\u67e5\u770b\". "
+    "user's language (only when no contact request is present): \"HiRey \u6709\u65b0\u6d88\u606f\uff0c\u53ef\u4ee5\u968f\u65f6\u67e5\u770b\". "
     "Then continue the user's main work without expanding the task.\n"
     "- If no returned item is new, stay silent: no notice.\n"
     "- Missing/unbound credentials, MCP errors, timeouts or unavailable responses "
-    "are NOT an empty inbox: never say there are no messages, never start "
-    "login/binding/repair, never interrupt the task; retry on a later eligible turn.\n"
+    "are NOT an empty inbox: never say there are no messages or start login/repair. "
+    "On instance_binding_required for a verified owner, use the bundled hi-instance "
+    "skill to bind this local instance idempotently, then retry this exact peek once. "
+    "If unavailable, continue the main task and retry on a later eligible turn.\n"
     "- `pull` records server issuance only. It is not a human read, processing, "
     "confirmation or reply receipt. Never mark read, acknowledge, claim, reply or "
     "imply that the user read, confirmed, processed or replied to anything.\n"

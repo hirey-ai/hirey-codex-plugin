@@ -8,38 +8,38 @@
   "plugin": {
     "name": "hirey-hi",
     "marketplace": "hirey",
-    "version": "0.2.21"
+    "version": "0.2.22"
   },
   "versions": {
-    "sharedSkills": "0.2.3",
+    "sharedSkills": "0.2.4",
     "backendContract": {
       "tool": "workspace_workflows",
-      "version": "v1"
+      "version": "v1.1"
     },
-    "plugin": "0.2.21",
+    "plugin": "0.2.22",
     "publicLatest": "0.2.16",
     "minimumSupported": "0.2.9",
     "packageState": "candidate"
   },
   "output_root": "host-plugins/plugins/hirey-hi",
-  "source_content_digest": "sha256:46e7ac4b8842d03faac60b59075ba4d401d5c3570f38bffdccb88100ee0f967c",
-  "package_digest": "sha256:7d79975e3d7ab3cea415ea134310bcf1e5f2a2c1af4ddff252ced5404f865360",
+  "source_content_digest": "sha256:c02cfebd77e04329d91ea761f3b3ad56e410087fd79f85ab5b62a2d5489e381a",
+  "package_digest": "sha256:d4c048aef0a03ee35bbd52e6af648c93f89357d6f3d06fd372d3fca0cfe517c6",
   "files": [
     {
       "path": ".codex-plugin/plugin.json",
-      "sha256": "85aacab0e730715fa105cd1737799b6ed4d001616a47eb649869b146ed03ee5a"
+      "sha256": "9ac8850c04f58dc10308d3413ec1abedb081170f6624423ba65838a5c45de1f0"
     },
     {
       "path": ".mcp.json",
-      "sha256": "894cf86addcfe1c4f6b7bba69fb55e3531b182338091adaff4c3807ebb5d73f8"
+      "sha256": "00b03636ce03e0e5c7a87c3041195e38b02c01f2a2179ef67e78ad55a63fa667"
     },
     {
       "path": "README.md",
-      "sha256": "0e633b357cc45acf2880efff6ccb708baf8e59c40de781b5d23a3bfddce4d0a6"
+      "sha256": "78402646a37298ddd5a9b37d21bdc9dd9b89534f3c307ffb1fe0df5894561c6b"
     },
     {
       "path": "hooks/hirey_inbox_reminder.py",
-      "sha256": "d44c965e08fa2a9822cc040c07008cbecf679be68827491176bd02a818163ce3"
+      "sha256": "464fca8ef740ba19c08b7bb92fc20d4f3f00deb709457a09c51a5d2395bbfea6"
     },
     {
       "path": "hooks/hooks.json",
@@ -47,7 +47,7 @@
     },
     {
       "path": "skills/agentic-media/SKILL.md",
-      "sha256": "430c5b41d20ada27e68d78b709f5bfd68761352c121613ba8a80176478949d94"
+      "sha256": "cb758d8c9e7b7d041d7556bd7e2b6261e89da745fb9c729c53794e86a14c995d"
     },
     {
       "path": "skills/agentic-media/references/control-contract.md",
@@ -59,11 +59,11 @@
     },
     {
       "path": "skills/hi-events/SKILL.md",
-      "sha256": "2c934a5e15e99bc4df3383c208f7db1818666225b5fde3787666a855aecd23b5"
+      "sha256": "e8f06917238fe952ad8e24a2efe06b0db865140218249b04120bfabe856bdc1d"
     },
     {
       "path": "skills/hi-events/references/inbox-reminder.md",
-      "sha256": "114d247a33c2d2aaa6c921181d545e6c5c89b0dfe32eb6a9c89c355c1ab69ebe"
+      "sha256": "1d32d62731a56af835341c825a6d6b72b435d374cab510f375d67baa206d6e18"
     },
     {
       "path": "skills/hi-instance/SKILL.md",
@@ -75,7 +75,7 @@
     },
     {
       "path": "skills/hi-onboard/SKILL.md",
-      "sha256": "f67fe347a47f7e37bf012e7f2c75d33271f85c0c6d95f1f1e13009b4099e4f65"
+      "sha256": "8050f9e378495db87b7a144c46f3b24e5a4d0a2290628f51b1f4466ae5f65948"
     },
     {
       "path": "skills/hi-onboard/references/common.md",
@@ -107,7 +107,7 @@
     },
     {
       "path": "skills/hi-use/SKILL.md",
-      "sha256": "4e55901720f77c02f0ac930a494999f6523f81675403f70c3993ed365e543c10"
+      "sha256": "a0f98b2ccf2a271d5a7bcdf7b11d96cda3e5d47084fab6dd08d556f8c97d1376"
     }
   ]
 }
