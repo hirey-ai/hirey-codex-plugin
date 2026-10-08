@@ -5,7 +5,12 @@
       "oauth_resource": "https://mcp.hirey.ai/mcp",
       "http_headers": {
         "x-hirey-plugin-host": "codex",
-        "x-hirey-plugin-version": "0.2.23"
+        "x-hirey-plugin-version": "0.2.24"
+      },
+      "tools": {
+        "workspace_workflows": {
+          "approval_mode": "approve"
+        }
       }
     }
   }

@@ -16,7 +16,7 @@ There is no npm package, local MCP daemon, or manually managed API key.
    browser OAuth page and never needs to type a `codex` command. Saved OAuth credentials are kept;
    only a `legacy_url_only_override` is removed as an authorized connection repair.
 3. Verify `hi_agent_status` and `workspace_workflows` are present, then call `hi_agent_status` with
-   `client_plugin_version: "0.2.23"` and `workspace_workflows` with
+   `client_plugin_version: "0.2.24"` and `workspace_workflows` with
    `action: catalog`. A missing tool after an actual install or update can follow a host loading or
    auth startup failure; it is not proof of anything about credential validity. Inspect the host
    loading state and do a supported reload or start a new Codex session first, then verify the tools
@@ -147,13 +147,16 @@ plugins/hirey-hi/
 This package is generated from `agent-integration/` by
 `node scripts/build-agent-packages.mjs`. Edit the source there, not this copy.
 
-## Host approval block (0.2.23)
+## Approval mode (0.2.24)
 
-`workspace_workflows` is not read-only, so Codex needs approval for it. In a chat whose approval
-policy is `never` without Full access (for example `Custom (config.toml)` with a sandbox, or
-`codex exec`), Codex rejects every call with "MCP tool call requires approval, but approval policy
-is never". Full access and Ask for approval both work. `hi-onboard` and the tool description tell
-the user to switch to one of them instead of misreporting a login or binding problem.
+`.mcp.json` declares `workspace_workflows` with `approval_mode: "approve"` (Codex's plugin-level
+per-tool setting; a user's Codex config can only make it stricter), so Hi works in chats whose
+approval policy is `never` without Full access, such as Approve for me or `Custom (config.toml)`
+with a sandbox. HiRey asks instead: for a person's own Agent, writes that reach or are visible to
+other people, change access, cannot be undone or spend on outside research need `confirmation`.
+That confirmation is asserted by the Agent after asking the person, as for `message.send`; it is
+the only check once Codex's popup is off. The sign-in tools keep Codex's default, and `hi-onboard`
+tells the user how to unblock a chat if Codex still refuses.
 
 ## Reception repair candidate 0.2.22
 

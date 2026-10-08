@@ -79,7 +79,8 @@ request has `{subject_person_id,linkedin_url}`. Otherwise use:
 {"subject_person_id":"per_subject","query":{"name":"Recorded name","anchors":["Actual company or context"]}}
 ```
 
-The response returns `enrichment_request_id` and `status:"queued"`, not usable research. Track
+Add `"confirmation": {"approved": true, "operation": "enrichment.request"}` next to `payload`
+only when the user explicitly asked for this research. The response returns `enrichment_request_id` and `status:"queued"`, not usable research. Track
 that request through `enrichment.list`; statuses include queued, processing, ready, partial,
 failed, dead_letter and cancelled. Preserve `failure_code`/`retry_after`. Candidates retain
 source refs, provider and decision; use `decided_value_json` for edited candidates and exclude
