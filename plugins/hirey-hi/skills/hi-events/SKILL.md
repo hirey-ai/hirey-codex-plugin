@@ -125,9 +125,9 @@ Subsequent business writes use existing operations, confirmations and authority.
 Describe the exact operation before composing a write. `message.reply` is an
 ordinary conversation reply; `message.human_reply` additionally requires exact
 source-bound human intent and must not be used to bypass an unavailable contract.
-`message.read` explicitly records the shared Person receipt; Agent
-`message.acknowledge` is its alias, not a transport completion. Clients use
-`message.read`. If describe returns `operation_contract_unavailable`, report that
+Agents and Clients use `message.read` only for an explicit shared Person read
+receipt; transport issuance, inspection and processing do not imply that receipt.
+If describe returns `operation_contract_unavailable`, report that
 capability gap and preserve the draft; do not guess payloads or claim success.
 Action descriptors include the original Workspace and object. If a descriptor
 requires Workspace selection, use the existing controlled selection flow after
