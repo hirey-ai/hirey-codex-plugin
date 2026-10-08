@@ -10,7 +10,7 @@ or asks to continue an Agentic Media work.
 This version covers only the first four product steps: receive, prepare, preview, and publish/share on
 HiRey. Social-platform OAuth and posting are a later phase and must not be offered as available.
 
-Start with `hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.23"})`, then call
+Start with `hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.24"})`, then call
 `workspace_workflows` with `action: catalog`. Read
 [references/control-contract.md](references/control-contract.md) before moving bytes.
 
@@ -102,7 +102,8 @@ The owner can name people on their own video (author, co_author or appeared_in) 
 `media.credit.add`, using only an exact Person ref the owner chose, never a guess from a face, a name
 or a file. Naming needs no approval from the named person and shows on the video page while they
 have a live Page; confirm with the owner before adding. The named person or the owner withdraws a
-credit with `media.credit.withdraw`; `media.credit.list` finds it. A refusal
+credit with `media.credit.withdraw` after they confirm it (pass `confirmation`);
+`media.credit.list` finds it. A refusal
 `media_credit_not_allowed` is final for that person on that video: do not retry, and do not guess
 why.
 

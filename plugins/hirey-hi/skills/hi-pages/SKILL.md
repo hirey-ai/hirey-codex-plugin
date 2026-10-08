@@ -62,8 +62,9 @@ not prove current access. Hi remains the authority for every call.
   count an untouched existing draft as newly generated.
 - Reuse suitable existing enrichment. Request more only when the user's batch scope includes
   research and actual evidence is insufficient: use an exact supplied LinkedIn URL, or the
-  recorded name plus real company/location/context anchors. Never query names alone. Persist the
-  `enrichment.request` before submission. A queued request is not completed research; reread its
+  recorded name plus real company/location/context anchors. Never query names alone. It is a paid
+  outside lookup: send it with `confirmation` only when the user explicitly asked for that research
+  for these people. Persist the `enrichment.request` before submission. A queued request is not completed research; reread its
   status through `enrichment.list`, respect retry timing, and continue other people while it waits.
   Reopening a batch does not authorize submitting the same paid research again.
 - Write a useful factual introduction from the supplied evidence, optionally a supported role,

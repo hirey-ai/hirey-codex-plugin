@@ -33,7 +33,7 @@ installation has no callable CLI and stop without changing the Hi configuration.
    out first: keep saved OAuth credentials unless repair of a `legacy_url_only_override` is needed
    (see Recovery).
 3. Verify that `hi_agent_status` and `workspace_workflows` are present. Then call `hi_agent_status`
-   with `client_plugin_version: "0.2.23"`, call `workspace_workflows` with
+   with `client_plugin_version: "0.2.24"`, call `workspace_workflows` with
    `action: catalog`, and retry the original bounded operation once.
 4. If a tool is still missing after an actual install or update, reload or start a new Codex session
    (because Codex reloads Skills only in a new session) and verify the tools again; escalate to a full Codex application restart only if a
@@ -71,12 +71,21 @@ This skill is the deterministic trigger available to the host. A host runtime th
 onboarding skill after OAuth has no automatic post-login hook, so its first bind still happens on the
 first instance-directed action; never claim an automatic first-login bind for such a host.
 
+## Codex approval prompts
+
+This plugin lets Codex run `workspace_workflows` without its own approval popup. HiRey asks instead:
+writes that reach or are visible to other people, change access, cannot be undone or spend on
+outside research need the person's explicit confirmation in this conversation, passed as
+`confirmation`. The live catalog marks them; a `explicit_user_confirmation_required` refusal means
+ask the person, then retry with `confirmation`.
+
 ## Codex blocked the call
 
 `MCP tool call requires approval, but approval policy is never` comes from Codex, not HiRey: this
-chat never asks for approval, so Codex rejected the call before it reached HiRey. It is not a login,
-credential, binding or instance problem. Do not log in, bind, reload, reinstall or retry. Tell the
-user only:
+chat never asks for approval, so Codex rejected the call before it reached HiRey. With this plugin it
+can still happen for the sign-in tools, or when a Codex setting or a manual `mcp_servers.hi` entry
+overrides the plugin (see Configuration preflight). It is not a login, credential, binding or
+instance problem. Do not log in, bind, reload, reinstall or retry. Tell the user only:
 
 > Codex blocked HiRey because this chat's permissions never ask for approval. Set this chat's
 > permissions to **Ask for approval** or **Full access**, then try again.
@@ -112,7 +121,7 @@ For `invalid_token`, `missing_bearer`, or a failed OAuth refresh:
    verified existing scope set plus the required scopes when that evidence is available; otherwise
    read the normal consent/status evidence rather than tokens, keychain entries, or broad grants.
    Do not assume the same DCR client or session survives CLI login.
-4. Call `hi_agent_status` with version `0.2.23`, call `workspace_workflows` with
+4. Call `hi_agent_status` with version `0.2.24`, call `workspace_workflows` with
    `action: catalog`, and retry the original bounded operation once.
 5. If the same turn is still stale, let the next user turn or a runtime refresh occur, then retry
    once. One synthetic verification observed a next-user-turn success on Codex 0.153.4; that is
