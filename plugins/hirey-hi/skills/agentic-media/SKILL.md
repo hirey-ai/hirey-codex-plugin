@@ -10,7 +10,7 @@ or asks to continue an Agentic Media work.
 This version covers only the first four product steps: receive, prepare, preview, and publish/share on
 HiRey. Social-platform OAuth and posting are a later phase and must not be offered as available.
 
-Start with `hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.24"})`, then call
+Start with `hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.25"})`, then call
 `workspace_workflows` with `action: catalog`. Read
 [references/control-contract.md](references/control-contract.md) before moving bytes.
 
@@ -124,3 +124,37 @@ Success requires the returned `release_receipt_id`, `video_canonical_url`, and s
 For public visibility also return `profile_canonical_url`. Do not expose a database object path or a
 raw storage URL. On an unknown outcome, query work status; never convert it to success. Withdrawal
 also requires explicit confirmation and succeeds only with the returned withdrawal receipt/state.
+
+## Video to a Page
+
+Use this when the user hands Codex a video or audio recording of a person (an interview, a
+conversation, a talk) and wants its transcript, or a HiRey Page from it. Describe `interview.create`, `interview.get`,
+`interview.request_processing`, `interview.transcript.revise`, `page.mine`, `page.create` and
+`page.compose` first; stop with `contract_not_describable` if one is missing.
+
+1. Upload it as above with `final_master` (or `raw_source` when the user wants HiRey to edit it), and
+   pass `interview: {title, subject_person_id}` to `agentic_media.work.create` when you know the exact
+   Person; otherwise `{title}` only. An own upload with an Interview starts its transcript by itself.
+   For a recording that is already a HiRey Media, use `interview.create` and then
+   `interview.request_processing` with `job_kind: transcribe`.
+2. Check for a transcript with `interview.get`: `transcript_revisions` holds it, and the first
+   finished machine transcript is saved there as revision 1. While a `transcribe` job in `jobs` is
+   `queued` or `leased`, tell the user it is being made (minutes; long recordings longer) and check
+   again later. When the last one is `failed` or `dead_letter`, request it again once.
+   No `transcribe` job at all (an upload made on someone else's behalf) means the owner requests it
+   with `interview.request_processing`; tell the user so instead of waiting.
+3. Check the transcript before using it: names, organisations, roles and dates may be misheard.
+   Compare them with what is known about the Person (`page.mine`, the user's own words) and ask the
+   user about anything that does not match. Save the user's corrections with
+   `interview.transcript.revise` (the current `if_transcript_revision`).
+4. Only when the user wants the video public, or asks for a Page from it, write the Page. A private
+   video only gets its transcript. Read `page.mine {subject_person_id}`; when the Person has none,
+   `page.create {subject_person_id, content: {display_name, slug}}` first. Then call `page.compose`
+   with the draft's `page_draft_id` and `if_revision`, the user's request as `instruction`, and the
+   transcript as one text material (`{text, label: "Video transcript: <title>"}`, at most 50,000
+   characters; say so when a longer transcript was cut). Report what it changed and its `not_sure`
+   and `ask_owner` items.
+
+The Page draft stays private. Publishing the Page or the video is a separate, explicitly confirmed
+step (`page.authorize` then `page.publish`, or the Interview's own publication); never infer it from
+the upload.
