@@ -84,6 +84,25 @@ not prove current access. Hi remains the authority for every call.
   that matching readback supports "saved in this batch". A different revision requires inspection
   and preservation of the newer changes, not overwriting to make the local index green.
 
+## People who joined HiRey: suggestions only
+
+A Person who joined HiRey owns their Page. `page.mine` with their `subject_person_id` returns
+`subject_joined: true` and `can_edit: false`: never write their Page with `page.draft`, and do not
+count such a Person as prepared in a batch. Only the Connector who first published their Page
+gets `next: "suggest"`:
+
+- That Connector may send proposed changes with `page.suggest`
+  (`{subject_person_id, fields, note?}`; human slots only, never facts or the name), or with
+  `page.compose` on their own draft, which composes against the owner's current Page and returns
+  `suggestion` instead of a draft revision. Either way it is "sent for approval": nothing on the
+  Page changes until the owner accepts. Send only what the user asked to change.
+- `page.suggestions.list` shows that Connector's sent suggestions as pending, used or not used.
+- Anyone else gets `page_subject_joined` (`next_step: message_owner`): say the Person manages
+  their own Page and offer to message them. There is no other editing route.
+- For the user's own Page, `page.suggestions.list` (empty payload) lists pending suggestions with
+  before/after per field. Call `page.suggestion.decide` (`accept` or `decline`) only when the user
+  decides that exact suggestion; accepting applies all of its remaining fields.
+
 ## Recovery and delivery
 
 The helper writes each request before it is sent. For a transport timeout or missing response,
