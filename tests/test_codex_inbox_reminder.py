@@ -116,6 +116,16 @@ class InboxReminderHookTests(unittest.TestCase):
         self.assertIn("HiRey 有新的联系申请，需要你处理", text)
         self.assertIn("Never approve or decline", text)
         self.assertIn('"peek": true', text)
+        # The emitted policy must gate migration history and coordinate across
+        # instances without conflating pull issuance and a human-read receipt.
+        for boundary in ("reminder_eligible=true", "historical_bootstrap=false",
+                         "action_snapshot", "inbox.reminder.begin",
+                         "inbox.action.record", "first_arrival", "existing:true",
+                         "reminder_unknown", "reminder_failed", "attempt_id"):
+            self.assertIn(boundary, text)
+        self.assertNotIn("Any returned item warrants one notice", text)
+        self.assertIn("Do not start login, binding or repair", text)
+        self.assertIn("never a second automatic read", text)
 
     def test_ascii_transport_is_portable_and_preserves_decoded_notice(self):
         # Windows CI stdout is cp1252. The hook must still exit 0 with valid,
@@ -301,7 +311,7 @@ class InboxReminderHookTests(unittest.TestCase):
             self.assertNotIn(pattern, text)
         # Two fixed notice alternatives; exactly one is emitted for a sample.
         self.assertEqual(text.count("HiRey"), 2)
-        self.assertIn("one notice", text)
+        self.assertIn("at most one brief neutral notice", text)
         self.assertNotIn("inbox.get", text)
 
     def test_guidance_is_one_bounded_first_page_sample(self):

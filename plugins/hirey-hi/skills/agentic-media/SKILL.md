@@ -10,7 +10,7 @@ or asks to continue an Agentic Media work.
 This version covers only the first four product steps: receive, prepare, preview, and publish/share on
 HiRey. Social-platform OAuth and posting are a later phase and must not be offered as available.
 
-Start with `hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.22"})`, then call
+Start with `hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.23"})`, then call
 `workspace_workflows` with `action: catalog`. Read
 [references/control-contract.md](references/control-contract.md) before moving bytes.
 
@@ -40,6 +40,8 @@ used by the requested flow:
 - `agentic_media.release.freeze`
 - `agentic_media.publish`
 - `agentic_media.withdraw` when requested
+- `media.job.request`, `media.job.get` and `media.candidate.decide` for a transcript
+- `media.credit.add`, `media.credit.list` and `media.credit.withdraw` to name people
 
 Stop with `contract_not_describable` if an operation, payload, result, confirmation requirement,
 idempotency rule, or limit is missing. The live service is authoritative; this list is routing
@@ -82,6 +84,27 @@ call revise for this intent.
 For `evidence`, the uploaded image/video remains private, skips editing and publication, and completes
 at `preview_ready`. Return its canonical `media_asset_id` to the calling workflow. Do not call revise,
 freeze, publish, or withdraw, and do not expose a storage locator.
+
+## Transcript before publishing
+
+A published video shows its transcript on its page and to agents only when the owner adopted one
+before publishing, and only of the exact cut being published. Once the Work is `preview_ready` on
+its final cut, call `media.job.request` with the Work's `media_id` and `job_kind=transcribe`, wait for the job with
+`media.job.get`, show the proposed transcript, and on the owner's yes call `media.candidate.decide`
+with `decision=adopt`. Then freeze and publish. After any `agentic_media.work.revise`, transcribe
+again: publish refuses a transcript of an earlier cut (`transcript_not_of_this_cut`). A published
+video cannot adopt a transcript later;
+it needs withdrawal and a new release. Skip this for `evidence`.
+
+## Name the people in it
+
+The owner can name people on their own video (author, co_author or appeared_in) with
+`media.credit.add`, using only an exact Person ref the owner chose, never a guess from a face, a name
+or a file. Naming needs no approval from the named person and shows on the video page while they
+have a live Page; confirm with the owner before adding. The named person or the owner withdraws a
+credit with `media.credit.withdraw`; `media.credit.list` finds it. A refusal
+`media_credit_not_allowed` is final for that person on that video: do not retry, and do not guess
+why.
 
 ## Preview, visibility, and publish
 

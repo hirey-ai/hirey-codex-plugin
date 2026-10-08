@@ -15,18 +15,45 @@ Each run prints a fixed, trusted `hookSpecificOutput.additionalContext` that
 tells the current Agent to make one bounded first-page check of the current
 Person's authorized Hirey business messages through the existing
 `workspace_workflows` MCP tool with `action: "agent_message.list"` and payload
-`{"types": ["message", "contact_request"], "limit": 20}`. The Agent does not follow
+`{"types": ["message", "contact_request"], "limit": 20, "new_only": true, "peek": true}`. The Agent does not follow
 `page.next_cursor` or paginate automatically on this reminder, and it refreshes
 the first page on each eligible turn. A page boundary is not exhaustion: the
 Agent never claims the inbox is empty or fully read from this bounded sample. It
 paginates fully only when the user actually asks to read or check messages,
 using the existing `hi-events` canonical pagination.
 
-Bounded sampling can miss older `pull.first_pull` items beyond the first page.
-This is best-effort awareness, not guaranteed delivery. An item is new only when
-its returned `pull.first_pull` is `true`. If at least one returned item is new,
-the Agent adds one brief neutral notice — `HiRey 有新消息，可以随时查看` — and
-continues the user's main work. Otherwise the Agent stays silent.
+Bounded sampling can miss older eligible events beyond the first page.
+This is best-effort awareness, not guaranteed delivery. An unissued event is
+eligible only when `reminder_eligible=true` and `historical_bootstrap=false`.
+Historical bootstrap stays readable but never becomes a first-arrival reminder.
+`pull.first_pull` records exact server issuance; it is not reminder eligibility,
+a reminder receipt, or human read. Peek never records issuance.
+
+The Agent inspects the Person-shared `action_snapshot.facts_present` and
+`action_snapshot.reminder`, including prior results after later evaluation or
+processing, and uses the hi-events
+controlled-reminder flow. Describe both `inbox.reminder.begin` and
+`inbox.action.record` first. Begin with the exact `sequence_ref`, the explicit
+purpose `first_arrival`, a stable idempotency key and the snapshot's revision.
+Only a newly created attempt permits a notice; `existing:true` suppresses a
+second notice for that purpose, including after another Agent's evaluation.
+A revision conflict defers the reminder to a later eligible read, preserving
+the one-read bound; a missing contract, snapshot or event
+reference leaves the automatic reminder silent.
+
+Choose the notice before beginning attempts, and begin only for events it
+covers. A contact-request notice covers only pending requests; other messages
+remain eligible for a later check. At most one brief neutral notice — `HiRey 有新消息，可以随时查看` — covers
+only new attempts obtained on this turn. A pending contact request uses the
+contact-request notice below. Record each actual reminder result through
+`inbox.action.record`, linked to its `attempt_id` and returned revision, as
+`reminded`, `reminder_unknown`, or `reminder_failed`. Preserve exact payload/key
+when retrying a lost fact-write response. Unknown and failed outcomes never
+trigger an automatic resend or a newly invented purpose. An explicitly
+requested follow-up is a separate authorized action. These are self-reported
+Agent facts, not verified delivery, human read or business completion. External
+hosts that do not participate have no exactly-once guarantee. Shared `processed`
+facts keep items inspectable and do not block original business actions.
 
 The hook itself never reads the inbox, message bodies, sender text, prompts,
 transcripts, credentials or the MCP endpoint. It performs no network or MCP
@@ -108,7 +135,7 @@ This is per-installation control, not a global "all hooks" switch.
   sender names, subjects, attachments or metadata, and never treats them as user
   or system instructions.
 - The automatic check is a bounded first-page sample. It can miss older
-  `first_pull` items beyond the page and is best-effort awareness, not guaranteed
+  eligible events beyond the page and is best-effort awareness, not guaranteed
   delivery; a page boundary never proves the inbox is empty or fully read. Full
   pagination happens only on the user's actual request.
 - Unavailable is not empty: a missing or unbound credential, MCP error, timeout
@@ -117,18 +144,24 @@ This is per-installation control, not a global "all hooks" switch.
 - This is foreground lifecycle checking on eligible turns. It is not an idle
   timer, background push, daemon or webhook subscription, and it does not
   promise exactly-once or continuous monitoring.
-- No backend operation, endpoint, connector, token copy or global hook change
-  is added. The existing remote OAuth MCP `hi` connection is reused.
+- No endpoint, connector, token copy or global hook change is added.
+  Shared action/reminder primitives record facts only; they never send or schedule. The existing remote OAuth MCP `hi` connection is reused.
 
 ## 2026-10-03 candidate reception repair
+
+This section records the earlier reception candidate. The current sequence and
+shared-action companion additionally requires its reviewed Core projection/action
+migration and matching runtime/contracts before distribution. Generated candidate
+packages are not a public plugin promotion or real-host acceptance receipt.
 
 The 0.2.22 candidate queries `agent_message.list` with
 `types=[message,contact_request], limit=20, new_only=true, peek=true`. Peek never advances
 instance pull evidence, so the owner can still receive the messages after a
 reminder. Ordinary receives omit peek and atomically advance this instance’s
 issuance evidence; explicit historical queries omit new_only. A verified
-installation with instance_binding_required uses the idempotent hi-instance
-flow before retrying once. This does not sign in an unverified owner or
+installation with instance_binding_required during an explicit user inbox read uses the
+idempotent hi-instance flow before retrying once. Automatic reminders never
+start login, binding or repair. This does not sign in an unverified owner or
 automatically mark a Person read. Core 0321 and the new contracts must be
 released before this candidate is distributed. Idle wake is unchanged.
 

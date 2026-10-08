@@ -7,15 +7,18 @@ description: Read and process the current Person's Hirey Hi business inbox throu
 
 For ordinary "receive/check new messages", use `agent_message.list` with
 `{"types":["message","contact_request"],"new_only":true,"limit":50}`. The server atomically
-excludes this bound instance's previously issued messages before paging and
+excludes this bound instance's previously issued events before paging and
 records only this returned page. Refresh page one on the next check; do not
 reuse an old history cursor as an arrival watermark. On `instance_binding_required`
 for a verified owner, complete the bundled hi-instance flow idempotently and
 retry. Never manufacture a device identity or treat a binding error as empty.
 
-Reminder checks use the same query with `peek:true`: this previews unseen
-messages and pending contact requests without consuming their pull progress. Tell the owner there are
-messages or pending contact requests; do not mark them read or decide presentation merely to notify.
+Reminder checks use the same query with `peek:true`: this previews unissued
+events without consuming their pull progress. Only `reminder_eligible=true` and
+`historical_bootstrap=false` qualify for first-arrival reminders. Inspect the
+Person-shared `action_snapshot` before deciding; `pull.first_pull` describes
+server issuance, never reminder eligibility or human read. Use the controlled
+reminder attempt below; do not mark read or decide presentation merely to notify.
 
 When the owner explicitly asks for a time range, a conversation or all history,
 omit `new_only` and use the existing filters/cursor. Label this as a history
@@ -27,18 +30,38 @@ related tasks and notifications. The default is every currently authorized
 Workspace. Never loop over `workspace.focus`, replace caller identity, or silently
 retry in only the focused Workspace.
 
-Optional payload fields: `types` (`message`, `contact_request`, `task`, `event`), `workspace_ids`,
+Optional payload fields: `types` (`message`, `contact_request`, `task`, `event`), `shelves`, `workspace_ids`,
 `since`, `until`, `limit` (1–100, default 50), and `cursor`. Workspace filters only
 narrow access. Resolve relative time using an explicit timezone and report the
 returned bounds. Keep filters and limit identical when continuing a cursor.
 
-Read `hirey.person.inbox.v2` `items`; label each with its server-returned
+The Core-owned shelves are `to_you`, `need_answers`, `requests`, `subscribed`,
+and `own`. Use the returned `shelf`; never reconstruct Need-answer membership
+from unread state, text, or local conversation heuristics. Core's
+`message_need_answer` owns that decision. Existing Brief and announcement events
+can be subscribed; this does not imply a new Follow-hit producer.
+
+Read the returned inbox `items`; label each with its server-returned
 `workspace.name` and `workspace.type`. `visible_in_workspaces` lists authorized
-mappings, not extra ownership. Reconcile repeated results by stable `item_ref`.
+mappings, not extra ownership. Start with summaries, type and necessary current
+state; fetch details only for selected items. Reconcile sequence events by stable
+opaque `sequence_ref`, not `item_ref`: an event remains the same while its task
+may now have a later revision or terminal current state. Keep `item_ref` intact
+for current source detail. Do not infer action is needed from an older event.
 Use `page.next_cursor` while `page.has_more` is true. Only
 `coverage.status=complete` AND `page.has_more=false` establish exhaustion of this
-query range. A failed read is never “no messages.” A stale-authority cursor requires
+query range. An empty page with a continuation does not establish exhaustion:
+bounded sequence scans may omit currently unauthorized or delayed sources.
+A failed read is never “no messages.” A stale-authority cursor requires
 a fresh first page; it does not justify falling back to the focused Workspace.
+
+If a first-page response was lost after server issuance, restart its exact
+`since`/`until` source-time range with `recovery:true`, `new_only:false` and no
+cursor. Recovery can return already-issued events and earlier task revisions
+with current authorized source state; reconcile `sequence_ref` across pages.
+It records no issuance, returns no historical body snapshot, and is incompatible
+with `agent_history`. Preserve filters and bounds when continuing recovery.
+Never replace this path with a Person-global watermark or claim exactly-once delivery.
 
 Open details with `action: inbox.get`, payload `{item_ref}`. Details use current
 object authority without changing focus. Message history is bounded;
@@ -64,7 +87,41 @@ Person-scoped pending intake is visible to that Person’s authorized Agents.
 Legacy Agent-scoped intake remains visible only to its recorded authority Agent.
 A real Web/iOS Client must not inherit Agent-only pending intake.
 
-Subsequent writes use existing business operations, confirmations and authority.
+## Shared action facts and controlled reminders
+
+`action_snapshot` is Person-shared across authorized Agents, while issuance is
+per bound instance. Its `revision`, `last_action`, `last_recorded_at` and
+`self_reported:true` describe Agent reports. `processed` never hides an item or
+prevents another authorized Agent from inspecting or acting. `evaluated`,
+`not_reminded` and `processed` do not prove human read or business completion.
+Inspect `facts_present` and `reminder` within the snapshot, not just
+`last_action`: later evaluation or processing does not erase a reminder result.
+
+Describe the live operation before writing; if unavailable, preserve the result
+or draft and report the capability gap. `inbox.action.record` accepts the exact
+`sequence_ref`, a stable `idempotency_key`, `expected_revision`, and `action`
+(`reminded`, `reminder_unknown`, `reminder_failed`, `evaluated`, `not_reminded`,
+or `processed`), with bounded optional `result_text` and `receipt_ref`.
+Authentication supplies Agent/instance provenance and the server records time;
+never provide a substitute Person, Agent or instance. On a revision conflict,
+reread current facts and reassess; do not blindly increment or overwrite history.
+Retry a response-lost fact write with its exact original payload and key.
+
+Before a first-arrival notice, require current reminder eligibility and inspect
+shared `facts_present` and `reminder` facts. A previous `reminded`, `reminder_unknown`, or `reminder_failed`
+is never an automatic retry. Call `inbox.reminder.begin` with `sequence_ref`,
+the explicit purpose `first_arrival`, a stable `idempotency_key`, and the
+snapshot's `expected_revision`. Only a newly created attempt permits this
+notice; `existing:true` means another begin already owns that purpose and must
+not trigger another notice. After the notice, record its result through
+`inbox.action.record` with that `attempt_id` and the returned revision, as
+`reminded`, `reminder_unknown`, or `reminder_failed`. Unknown outcomes remain
+unknown; a retry or new purpose requires a new explicitly authorized action,
+never a silently generated purpose to bypass coordination. These facts do not
+send, schedule or grant business authority. Hosts that do not participate have
+no exactly-once guarantee.
+
+Subsequent business writes use existing operations, confirmations and authority.
 Describe the exact operation before composing a write. `message.reply` is an
 ordinary conversation reply; `message.human_reply` additionally requires exact
 source-bound human intent and must not be used to bypass an unavailable contract.

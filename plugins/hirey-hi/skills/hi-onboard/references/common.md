@@ -95,6 +95,8 @@ returned receipt, canonical ref, and state; do not expose internal storage locat
 <!-- fragment:status-recovery -->
 ## Status recovery
 
+On `reconnect_required`, tell the user the returned message and stop; do not retry, even if `update_required` is true and `update_command` is null.
+
 Use `error_code`, not the HTTP status by itself. This table stays authoritative:
 
 | HTTP | `error_code` | Action |
