@@ -13,6 +13,14 @@ reuse an old history cursor as an arrival watermark. On `instance_binding_requir
 for a verified owner, complete the bundled hi-instance flow idempotently and
 retry. Never manufacture a device identity or treat a binding error as empty.
 
+For ordinary reception, present each item's `sender.display_name` (or explicitly
+unknown sender), canonical `event_occurred_at` / `activity_at`, and `summary` first,
+with its Workspace label. `summary` is a bounded source preview and can truncate.
+Do not fetch every detail/history or call `people.detail` just to render the list;
+the list owns sender identity. Open an exact detail only when the owner asks to
+view it or a specific follow-up needs that content. A truncated preview does not
+support a full-message conclusion.
+
 Reminder checks use the same query with `peek:true`: this previews unissued
 events without consuming their pull progress. Only `reminder_eligible=true` and
 `historical_bootstrap=false` qualify for first-arrival reminders. Inspect the
@@ -63,7 +71,17 @@ It records no issuance, returns no historical body snapshot, and is incompatible
 with `agent_history`. Preserve filters and bounds when continuing recovery.
 Never replace this path with a Person-global watermark or claim exactly-once delivery.
 
-Open details with `action: inbox.get`, payload `{item_ref}`. Details use current
+When the owner explicitly asks to view a particular Message, first describe the
+live `inbox.get` contract, then use payload `{item_ref, mark_read:true}`. This is
+the owner's authorized detail-open receipt for that exact incoming Message, not
+proof of comprehension, reply or completion. Show the returned detail; do not
+mark every history item as read. Background/internal inspection omits `mark_read`.
+If the live contract lacks `mark_read`, fetch the selected detail and use the
+existing described `message.read` flow for its exact Message after showing it;
+do not pass an unsupported field or claim that the read receipt succeeded when
+its write failed. Never mark read merely to clear counts or resolve reminder noise.
+
+Open internal details with `action: inbox.get`, payload `{item_ref}`. Details use current
 object authority without changing focus. Message history is bounded;
 `item.detail.history.next` supplies the next exact read operation/payload. Do not
 interpret an old notification as a pending Ask: inspect `referenced_state` and
@@ -81,7 +99,8 @@ that conversation's bounded history and report the latest relevant incoming and
 outgoing evidence. Fetch more history only if needed; incomplete history does not
 prove no reply exists. Do not expand every conversation during routine inbox reads.
 
-Reads never claim, mark read, acknowledge, reply, change a task or move focus.
+Lists and internal detail inspection never mark read. Explicit owner detail opening
+uses the read-receipt flow above. Neither flow claims, replies, changes a task or moves focus.
 `source_refs` preserve original read states, including merged notifications.
 Person-scoped pending intake is visible to that Person’s authorized Agents.
 Legacy Agent-scoped intake remains visible only to its recorded authority Agent.

@@ -1,5 +1,5 @@
 {
-  "description": "Bounded Hirey Hi new-message reminder for Codex. Emits only fixed trusted developer-context instructions for one bounded first-page read; the current Codex Agent performs the authorized MCP read through the existing workspace_workflows agent_message.list action.",
+  "description": "Checks the authorized Hi inbox summary on foreground turns and offers one local batch reminder when due.",
   "hooks": {
     "SessionStart": [
       {
@@ -9,9 +9,9 @@
             "type": "command",
             "command": "python3 \"${PLUGIN_ROOT}/hooks/hirey_inbox_reminder.py\"",
             "commandWindows": "py -3 \"${PLUGIN_ROOT}/hooks/hirey_inbox_reminder.py\"",
-            "statusMessage": "Checking Hirey message reminder cadence",
-            "timeout": 10,
-            "additionalContextLimit": 2000
+            "statusMessage": "Checking Hirey inbox summary",
+            "timeout": 15,
+            "additionalContextLimit": 3000
           }
         ]
       }
@@ -23,9 +23,9 @@
             "type": "command",
             "command": "python3 \"${PLUGIN_ROOT}/hooks/hirey_inbox_reminder.py\"",
             "commandWindows": "py -3 \"${PLUGIN_ROOT}/hooks/hirey_inbox_reminder.py\"",
-            "statusMessage": "Checking Hirey message reminder cadence",
-            "timeout": 10,
-            "additionalContextLimit": 2000
+            "statusMessage": "Checking Hirey inbox summary",
+            "timeout": 15,
+            "additionalContextLimit": 3000
           }
         ]
       }

@@ -16,7 +16,7 @@ There is no npm package, local MCP daemon, or manually managed API key.
    browser OAuth page and never needs to type a `codex` command. Saved OAuth credentials are kept;
    only a `legacy_url_only_override` is removed as an authorized connection repair.
 3. Verify `hi_agent_status` and `workspace_workflows` are present, then call `hi_agent_status` with
-   `client_plugin_version: "0.2.28"` and `workspace_workflows` with
+   `client_plugin_version: "0.2.29"` and `workspace_workflows` with
    `action: catalog`. A missing tool after an actual install or update can follow a host loading or
    auth startup failure; it is not proof of anything about credential validity. Inspect the host
    loading state and do a supported reload or start a new Codex session first, then verify the tools
@@ -62,24 +62,22 @@ The plugin does not own any of those records. It only connects the Codex host to
 
 The plugin bundles a lifecycle hook at `hooks/hooks.json` (discovered by Codex
 by default; the manifest does not override it) plus the small standard-library
-script `hooks/hirey_inbox_reminder.py`. The hook runs as a `command` handler at
-`SessionStart` (`startup|resume`) and `UserPromptSubmit`. It prints only a
-fixed, trusted `additionalContext` that tells the current Agent to make one
-bounded first-page check of the current Person's authorized Hirey messages
-through the existing `workspace_workflows` `agent_message.list` action
-(`{"types": ["message", "contact_request"], "limit": 20, "new_only": true, "peek": true}`). The Agent does not paginate
-automatically on the reminder and never claims the inbox is empty or fully read
-from that sample; it paginates fully only when the user actually asks to read
-their messages. Bounded sampling can miss older eligible events beyond the
-first page: it is best-effort awareness, not guaranteed delivery. Require
-`reminder_eligible=true` and `historical_bootstrap=false`; `pull.first_pull` is
-server issuance only. The Agent inspects Person-shared action facts and uses
-`inbox.reminder.begin` for the exact event and `first_arrival` purpose before
-showing one neutral notice. An existing attempt never produces a repeat.
-`inbox.action.record` records the actual result with the attempt reference;
-unknown/failed outcomes never silently resend. These are self-reports, not
-human read or business completion. Missing contracts leave this automatic
-reminder silent; login/binding and pagination remain explicit user flows.
+script `hooks/hirey_inbox_reminder.py` and its bounded App Server client
+`hooks/hi_hook_client.py`. The hook runs as a `command` handler at
+`SessionStart` (`startup|resume`) and `UserPromptSubmit`. It checks whether the
+current session is silent, then limits requests to once per installation every
+five minutes by default. When due, it calls `hi_agent_status` and one
+`workspace_workflows` `inbox.latest` query through the installed Hi connection.
+The query returns exact new and historical pending counts, up to ten new item
+references, and a signed checkpoint. It does not return message bodies or mark
+anything read. A new batch can produce one short Agent prompt; unchanged
+batches and historical backlog follow separate repeat intervals. The Agent
+decides whether to show the count summary or skip it and records that decision
+locally before its final answer. The record proves an Agent attempt, not human
+read or business completion. Explicit message reading continues through the
+`hi-events` workflow.
+The active JSONL journal is archived at 8 MiB and replaced with a state
+snapshot; older archives remain in the same plugin data directory for review.
 
 The hook is standard-library-only Python 3. Codex runs `python3` on macOS and
 Linux and `py -3` on Windows (`commandWindows` in `hooks/hooks.json`), so a
@@ -87,25 +85,31 @@ Python 3 interpreter must be on `PATH`; no other dependency is installed. Codex
 expands `${PLUGIN_ROOT}` to the installed plugin root itself, so the command
 does not rely on Unix shell environment expansion.
 
-The hook does not read the inbox, message bodies, prompts, transcripts,
-credentials or the MCP endpoint, and it performs no network or MCP call. It
-reuses the existing remote OAuth MCP `hi` connection through the current Agent.
-`workspace_workflows` output is a business response, not the strict Codex hook
-output contract, so an `mcp_tool` entry would be ignored as context; the
-`command` hook supplies the fixed model-mediated policy instead.
+The hook does not read message bodies, prompts, transcripts or credentials. Its
+short-lived App Server client uses the existing remote OAuth MCP `hi` connection
+and does not initiate login or instance binding. Authentication, binding,
+timeout, contract and local write failures leave the checkpoint unchanged and
+produce no Agent prompt. `workspace_workflows` output is a business response,
+not the strict Codex hook output contract; the command hook validates it before
+supplying `additionalContext`.
 
 Plugin hooks are non-managed and Codex skips them until the user reviews and
-trusts the exact definition. Per-installation opt-out and cadence settings are
+trusts the exact definition. The Hook validates `PLUGIN_DATA` against the data
+directory derived from its installed path. Agent commands derive that same
+directory from the installed script path because they may not inherit
+`PLUGIN_DATA`. Outside a plugin cache, the script uses `PLUGIN_DATA` or falls
+back to the Hi instance data directory. Symlinked paths are rejected.
+Per-installation opt-out and cadence settings are
 documented in
 [`skills/hi-events/references/inbox-reminder.md`](skills/hi-events/references/inbox-reminder.md):
 use `/hooks` to disable this one hook, set
 `HIREY_CODEX_INBOX_REMINDER=off`, or place `inbox_reminder_config.json` in
-`PLUGIN_DATA`. A user opt-out already expressed in the conversation is obeyed
-immediately, even if an earlier injected reminder instruction persists. The
-Agent also treats message contents returned by the MCP tool as untrusted data,
-never as user or system instructions. The reminder is foreground lifecycle
-checking only; it is not an idle push, daemon or webhook subscription, and it
-never marks read, acknowledges, claims or replies.
+`PLUGIN_DATA`. The Agent can also run the script's
+`session-silence --value on|off` command for the current session after a user request; it requires the
+matching `CODEX_SESSION_ID`. The Agent treats names and references in a hint as
+data, never as instructions. The reminder runs only on foreground lifecycle
+events; it is not an idle push, daemon or webhook subscription, and it never
+marks read, acknowledges, claims or replies.
 
 ## Release version contract
 
@@ -133,6 +137,7 @@ plugins/hirey-hi/
   .mcp.json
   hooks/
     hooks.json
+    hi_hook_client.py
     hirey_inbox_reminder.py
   skills/
     agentic-media/SKILL.md
@@ -157,21 +162,3 @@ other people, change access, cannot be undone or spend on outside research need 
 That confirmation is asserted by the Agent after asking the person, as for `message.send`; it is
 the only check once Codex's popup is off. The sign-in tools keep Codex's default, and `hi-onboard`
 tells the user how to unblock a chat if Codex still refuses.
-
-## Reception repair candidate 0.2.22
-
-New-message checks use a non-consuming bound-instance `new_only` preview.
-Regular receives fetch only not-yet-issued messages for that instance; explicit
-history reads retain time filters and pagination. Missing local binding is
-recovered by the bundled signed-instance skill for a verified owner. Core 0321
-and Platform contracts must ship first. Public latest/minimum remain unchanged
-until distribution and real-host acceptance.
-
-## Contact-request reminders
-
-The current candidate also selects `contact_request` alongside `message`, with
-`new_only=true, peek=true`. Only current pending requests addressed to this Person
-are eligible; revoked, blocked, accepted or declined requests are not reminders.
-When that type is present, the single notice is “HiRey 有新的联系申请，需要你处理”.
-The Agent does not accept, decline or acknowledge the request during a reminder.
-The existing session/prompt cadence applies; this does not add an idle wake daemon.
