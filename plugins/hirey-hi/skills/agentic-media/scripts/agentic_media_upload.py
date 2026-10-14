@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Local, secret-free planning and multipart upload helper for Agentic Media.
+"""Local, secret-free planning, multipart upload and download helper for Agentic Media.
 
 The MCP control plane remains outside this module.  A caller obtains a fresh
 upload description from the live ``workspace_workflows`` operation and passes
-it to ``upload`` over stdin.  URLs and headers are used in memory only; the
+it to ``upload`` over stdin, or a fresh ``media.get`` result to ``download``.  URLs and headers are used in memory only; the
 durable state writer accepts a deliberately small allowlist.
 """
 
@@ -594,6 +594,62 @@ def upload_from_description(
     return store.load()
 
 
+def _default_get(url: str, headers: Mapping[str, str]):
+    request = urllib.request.Request(url, headers=dict(headers), method="GET")
+    try:
+        return urllib.request.urlopen(request, timeout=120)
+    except urllib.error.HTTPError as exc:
+        raise UploadError("download_http_%d" % exc.code, "recording download failed") from exc
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise UploadError("download_transport_failed", "recording download failed") from exc
+
+
+def download_recording(read: Mapping[str, Any], out: str | os.PathLike[str], *,
+                       get: Callable[[str, Mapping[str, str]], Any] = _default_get) -> dict[str, Any]:
+    """Download the current recording a fresh ``media.get`` names, to edit it locally.
+
+    The URL and its capability header are used in memory only and never written
+    anywhere; the file is checked against ``recording_sha256`` before it appears
+    at ``out`` (mode 0600), and an existing file is never overwritten.
+    """
+    url = str(read.get("download_url") or "")
+    headers = read.get("download_headers")
+    expected = str(read.get("recording_sha256") or "")
+    local_http = re.match(r"^http://(?:127\.0\.0\.1|localhost)(?::[0-9]+)?/", url)
+    if not url.startswith("https://") and local_http is None:
+        raise UploadError("download_unavailable", "media.get returned no HTTPS download_url")
+    if not isinstance(headers, Mapping) or not headers or not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise UploadError("download_unavailable", "media.get returned no download capability")
+    target = Path(out)
+    if target.exists():
+        raise UploadError("download_target_exists", "choose a new local file name")
+    digest = hashlib.sha256()
+    size = 0
+    fd, temporary = tempfile.mkstemp(prefix=".hirey-download-", dir=str(target.parent or Path(".")))
+    try:
+        # The handle owns the descriptor from here, so it is closed before the
+        # temporary file is removed (Windows refuses to unlink an open file).
+        with os.fdopen(fd, "wb") as handle:
+            _protect_state_file(handle.fileno())
+            with get(url, {str(k): str(v) for k, v in headers.items()}) as response:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+                    size += len(chunk)
+                    handle.write(chunk)
+        if digest.hexdigest() != expected:
+            raise UploadError("download_sha256_mismatch", "downloaded bytes are not the current recording")
+        os.link(temporary, target)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+    return {"ok": True, "path": str(target), "size": size, "sha256": expected}
+
+
 def _json_out(value: Any) -> None:
     print(json.dumps(value, sort_keys=True, separators=(",", ":")))
 
@@ -634,6 +690,9 @@ def _parser() -> argparse.ArgumentParser:
 
     upload = sub.add_parser("upload")
     upload.add_argument("--state", required=True)
+
+    download = sub.add_parser("download")
+    download.add_argument("--out", required=True)
     return parser
 
 
@@ -666,6 +725,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "upload":
             description = json.load(sys.stdin)
             upload_from_description(SessionStore(args.state), description)
+        elif args.command == "download":
+            _json_out(download_recording(json.load(sys.stdin), args.out))
         return 0
     except (UploadError, OSError, ValueError, json.JSONDecodeError) as exc:
         code = exc.code if isinstance(exc, UploadError) else "local_upload_failed"
