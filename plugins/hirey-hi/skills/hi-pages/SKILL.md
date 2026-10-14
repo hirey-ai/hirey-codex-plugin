@@ -73,7 +73,7 @@ not prove current access. Hi remains the authority for every call.
   value for an `edited` candidate. Leave uncertainty visible and missing facts empty. Do not
   import contact details, sensitive traits, third-party photos or copied source bodies.
 - For this first slice, the current Agent drafts from authorized readable material directly.
-  `page.compose` is optional in the broader API, but is not needed or invoked by this helper.
+  This helper never calls `page.compose`.
   No eligible Capture is required for an old Diary record, and no new meeting may be fabricated.
 - `page.draft.content` replaces the entire content object. Start from the fresh `content_json`,
   preserve existing fields and human edits, then apply the supported additions. Persist this
@@ -92,10 +92,9 @@ count such a Person as prepared in a batch. Only the Connector who first publish
 gets `next: "suggest"`:
 
 - That Connector may send proposed changes with `page.suggest`
-  (`{subject_person_id, fields, note?}`; human slots only, never facts or the name), or with
-  `page.compose` on their own draft, which composes against the owner's current Page and returns
-  `suggestion` instead of a draft revision. Either way it is "sent for approval": nothing on the
-  Page changes until the owner accepts. Send only what the user asked to change.
+  (`{subject_person_id, fields, note?}`; human slots only, never facts or the name). It is "sent
+  for approval": nothing on the Page changes until the owner accepts. Send only what the user
+  asked to change.
 - `page.suggestions.list` shows that Connector's sent suggestions as pending, used or not used.
 - Anyone else gets `page_subject_joined` (`next_step: message_owner`): say the Person manages
   their own Page and offer to message them. There is no other editing route.

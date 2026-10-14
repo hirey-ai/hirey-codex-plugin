@@ -413,6 +413,49 @@ class AgenticMediaUploadTests(unittest.TestCase):
             lambda: media.upload_from_description(store, {}),
         )
 
+    def test_download_checks_the_recording_and_keeps_the_capability_in_memory(self):
+        # Video design S2: the Agent downloads the current recording to edit it locally.
+        import io
+        data = b"synthetic recording bytes"
+        read = {"download_url": "https://platform.example.invalid/v1/agentic-media/media/med_a/recording/mas_a",
+                "download_headers": {"x-hi-download-capability": "123.secret"},
+                "recording_sha256": hashlib.sha256(data).hexdigest()}
+        seen = []
+
+        def get(url, headers):
+            seen.append((url, headers))
+            return io.BytesIO(data)
+
+        out = self.root / "cut.mp4"
+        result = media.download_recording(read, out, get=get)
+        self.assertEqual(result, {"ok": True, "path": str(out), "size": len(data),
+                                  "sha256": read["recording_sha256"]})
+        self.assertEqual(out.read_bytes(), data)
+        if os.name == "nt":
+            env = dict(os.environ, TEST_STATE_PATH=str(out))
+            env.pop("PSModulePath", None)
+            acl = subprocess.check_output(
+                ["powershell", "-NoProfile", "-Command",
+                 "[IO.File]::GetAccessControl($env:TEST_STATE_PATH).Sddl"],
+                env=env, text=True,
+            ).strip().split("D:", 1)[1]
+            self.assertTrue(acl.startswith("P"), acl)
+            self.assertEqual(acl[acl.index("("):], "(A;;FA;;;OW)")
+        else:
+            self.assertEqual(out.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(seen, [(read["download_url"], read["download_headers"])])
+        self.assertNotIn("secret", json.dumps(result))
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()), ["cut.mp4"])
+        self.assert_code("download_target_exists", lambda: media.download_recording(read, out, get=get))
+        self.assert_code("download_sha256_mismatch", lambda: media.download_recording(
+            {**read, "recording_sha256": "0" * 64}, self.root / "other.mp4", get=get))
+        self.assertFalse((self.root / "other.mp4").exists())
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()), ["cut.mp4"])
+        for bad in ({**read, "download_url": "http://example.com/x"}, {**read, "download_headers": None},
+                    {**read, "download_url": None}):
+            self.assert_code("download_unavailable",
+                             lambda bad=bad: media.download_recording(bad, self.root / "x.mp4", get=get))
+
 
 if __name__ == "__main__":
     unittest.main()
