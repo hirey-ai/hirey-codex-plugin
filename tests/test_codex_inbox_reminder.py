@@ -265,6 +265,37 @@ class InboxReminderHookTests(unittest.TestCase):
         self.assertEqual(remote.latest_inputs(), [None, None])
 
     # [IR-15]
+    def test_unpresented_candidates_never_exhaust_batch_across_sessions(self):
+        # Old installations may already have used all three candidate slots.
+        self.config(max_hot_hints=3, hot_repeat_seconds=7200)
+        remote = FakeRemote([receipt(f"cp-{n}", new=2) for n in range(6)])
+        batch_id = None
+        for n in range(6):
+            output = self.run_hook(remote, f"session-{n}")
+            self.assertTrue(output, f"candidate {n} silently consumed reminder budget")
+            self.assertEqual(output["systemMessage"], "Hi：有 2 条新消息，都来自王某，要看吗？")
+            batch = self.scope()["pending_batch"]
+            batch_id = batch_id or batch["batch_id"]
+            self.assertEqual(batch["batch_id"], batch_id)
+            if n % 2:
+                with patch.dict(os.environ, CODEX_SESSION_ID=f"session-{n}"):
+                    hook.command_record(self.hint()["record_id"], "skipped", "")
+            self.clock.advance(301)
+        self.assertEqual(remote.latest_inputs(), [None] * 6)
+        self.assertEqual(self.events("reminder_attempted"), [])
+
+    def test_new_messages_after_presented_reminder_form_new_batch(self):
+        remote = FakeRemote([receipt("cp-1", new=2), receipt("cp-2", new=1)])
+        self.run_hook(remote)
+        first_batch = self.scope()["pending_batch"]["batch_id"]
+        with patch.dict(os.environ, CODEX_SESSION_ID="session-a"):
+            hook.command_record(self.hint()["record_id"], "attempted", "已输出提醒")
+        self.clock.advance(301)
+        result = self.run_hook(remote, "session-b")
+        self.assertEqual(result["systemMessage"], "Hi：有 1 条新消息，都来自王某，要看吗？")
+        self.assertNotEqual(self.scope()["pending_batch"]["batch_id"], first_batch)
+        self.assertEqual(remote.latest_inputs(), [None, "cp-1"])
+
     def test_ir15_attempted_items_become_cold_and_repeat_only_after_interval(self):
         self.config(cold_repeat_seconds=600)
         remote = FakeRemote([receipt("cp-1", new=2), receipt("cp-2", historical=2),
@@ -411,7 +442,7 @@ class InboxReminderHookTests(unittest.TestCase):
 
     # [IR-27]
     def test_ir27_invalid_new_config_fields_fail_silently_before_remote(self):
-        for config in ({"hot_repeat_seconds": "60"}, {"max_hot_hints": 11}):
+        for config in ({"cold_repeat_seconds": "60"}, {"cold_repeat_seconds": 0}):
             with self.subTest(config=config):
                 self.config(**config)
                 remote = FakeRemote([receipt("cp-1", new=1)])
