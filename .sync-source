@@ -3,4 +3,4 @@
 # content. The publish pipeline refuses to republish any prod state that is not
 # a descendant of this commit (forward-only drift guard) — see
 # scripts/lib/publish-common.sh.
-96e857435715b09ac6a1aec77d360388d645bfc9
+cd7ddc2b209963ac8037f0364e641b0cae2a1b79

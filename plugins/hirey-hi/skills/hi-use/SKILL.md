@@ -9,7 +9,7 @@ Hi exposes one MCP tool, `workspace_workflows`. Its `action: catalog` result is 
 for the existing operations, their purpose, write behavior, and confirmation requirement.
 
 Before the first Hi business call in a new session, call
-`hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.33"})`. Follow its plugin policy and authentication
+`hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.34"})`. Follow its plugin policy and authentication
 state through the existing server rules. Package versions are diagnostic: report update hints without
 blocking an otherwise compatible, authorized business call. Use the host reference when an actual
 package update or reload is needed; protocol and business permission errors remain enforced.
@@ -35,6 +35,38 @@ or private reads before login.
 - On `reconnect_required`, tell the user the returned message and stop; do not retry, even if `update_required` is true and `update_command` is null.
 - On failure, branch on `error_code`: recover a 401 credential state, follow a 403 binding/scope
   action, and never turn an anonymous public operation into a login requirement.
+
+## Person Follow
+
+For an explicit request to follow a Person, inspect `follow.set` and say that the Person can see the Follow. Use its exact target, `follow_id` and version from `follow.list`; a new Follow uses version 0. Pause stops new arrivals but keeps received public updates; resume does not backfill. Unfollow or source withdrawal hides updates. Earlier private Watches stay private: never convert them or copy private words. Topic/city Watches remain separate. Discover received updates through `agent_message.list` with `shelves:["subscribed"]`, then read only selected `inbox.get` detail. This is not contact permission or a request to message or notify anyone.
+
+## Post on HiRey / keep my posts in sync
+
+When the user asks you to post something on HiRey, or once to "keep my posts in sync" (for example
+from X or LinkedIn), use `media.post`: it publishes the user's own post on their HiRey Page and, while
+they are in HiRey search, in the public Feed. That one request is the decision; post each new item without asking again, and stop when the user says stop.
+- Only the user's own posts, posted as themself. Never post for anyone else, never repost or quote
+  other people's posts, and skip replies to others; join the user's own thread into one post.
+- `body_text` is the user's words exactly as written. Never rewrite, summarize or translate them.
+  No source link is needed or shown; HiRey never fetches other sites, so read the user's own posts
+  yourself (their public profile, an export, or their own account access).
+- `post_key` is your own stable key for the post, such as a fingerprint of the original post id.
+  The same key is the same HiRey post: identical content changes nothing (`unchanged`), new content
+  updates it in place (`updated`). Keep a new `idempotency_key` per call.
+- `posted_at` is when the user made the post (the original time for a synced post); the Feed places
+  it there. Links go in `links` (up to four https URLs).
+- Photos: up to four of the user's own photos from that post, in order, in `images`. Upload each one
+  fresh for this post: `agentic_media.work.create` with `intent: "post_photo"` (JPEG, PNG or WebP, at
+  most 5 MiB; resize larger photos first), `agentic_media.upload.describe`, PUT each missing part to
+  its `url` with its `required_headers`, then `agentic_media.upload.complete`; its `output_asset_id`
+  is the photo's id. A photo uploaded for a post belongs to that post only; never reuse a Who I Met,
+  meeting or other photo. On an edit, omit `images` to keep the photos, or send the new list (`[]`
+  removes them).
+- First sync: post at most the 50 most recent; after that HiRey accepts 20 posts a day. On
+  `post_daily_limit`, stop and continue later. On `owner_page_not_public`, tell the user their Page
+  must be live first.
+- If the user deletes or takes down a post, find it with `media.list` and call `media.withdraw` with
+  its `publication_id`. A post taken down stays down (`post_withdrawn`); it is not posted again.
 
 ## Existing workflow families
 

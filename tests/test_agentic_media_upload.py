@@ -101,6 +101,19 @@ class AgenticMediaUploadTests(unittest.TestCase):
             ),
         )
 
+    def test_a_post_photo_is_a_jpeg_png_or_webp_image(self):
+        self.assertEqual(media.validate_intent("post_photo"), "post_photo")
+        path = self.image("photo.png")
+        result = media.preflight_local_file(
+            path, intent="post_photo", allowed_suffixes=[".png", ".jpg"], max_bytes=100,
+            quota_remaining_bytes=100, part_size=16, max_parts=10)
+        self.assertEqual(result["mime_type"], "image/png")
+        gif = self.root / "photo.gif"
+        gif.write_bytes(b"GIF89a" + b"x" * 10)
+        self.assert_code("unsupported_media_format", lambda: media.preflight_local_file(
+            gif, intent="post_photo", allowed_suffixes=[".gif"], max_bytes=100,
+            quota_remaining_bytes=100, part_size=16, max_parts=10))
+
     def test_preflight_uses_live_limits_and_fails_closed(self):
         path = self.video()
         result = media.preflight_local_file(

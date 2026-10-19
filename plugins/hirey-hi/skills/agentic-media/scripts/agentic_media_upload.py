@@ -25,7 +25,10 @@ import urllib.error
 import urllib.request
 
 
-INTENTS = frozenset({"raw_source", "final_master", "evidence"})
+INTENTS = frozenset({"raw_source", "final_master", "evidence", "post_photo"})
+# A photo for one of the person's own posts (Core 0567): JPEG, PNG or WebP, at most 5 MiB.
+POST_PHOTO_SUFFIXES = frozenset({".jpeg", ".jpg", ".png", ".webp"})
+POST_PHOTO_MAX_BYTES = 5 * 1024 * 1024
 EVIDENCE_IMAGE_MIME_BY_SUFFIX = {
     ".avif": "image/avif", ".gif": "image/gif", ".heic": "image/heic",
     ".heif": "image/heif", ".jpeg": "image/jpeg", ".jpg": "image/jpeg",
@@ -87,7 +90,7 @@ def _nonnegative(value: Any, field: str) -> int:
 def validate_intent(intent: str) -> str:
     value = str(intent or "").strip()
     if value not in INTENTS:
-        raise UploadError("invalid_intent", "intent must be raw_source, final_master, or evidence")
+        raise UploadError("invalid_intent", "intent must be raw_source, final_master, evidence, or post_photo")
     return value
 
 
@@ -180,7 +183,14 @@ def preflight_local_file(
     if suffix not in allowed:
         raise UploadError("unsupported_video_format", "file extension is not allowed by the live contract")
     mime_type = mimetypes.guess_type(source["name"])[0]
-    if checked_intent == "evidence" and suffix in EVIDENCE_IMAGE_MIME_BY_SUFFIX:
+    if checked_intent == "post_photo":
+        if suffix not in POST_PHOTO_SUFFIXES:
+            raise UploadError("unsupported_media_format", "a post photo is a JPEG, PNG or WebP image")
+        if source["size"] > POST_PHOTO_MAX_BYTES:
+            raise UploadError("upload_too_large", "a post photo is at most 5 MiB; resize it first")
+        mime_type = EVIDENCE_IMAGE_MIME_BY_SUFFIX[suffix]
+        signature = _image_signature(Path(source["path"]), mime_type)
+    elif checked_intent == "evidence" and suffix in EVIDENCE_IMAGE_MIME_BY_SUFFIX:
         mime_type = EVIDENCE_IMAGE_MIME_BY_SUFFIX[suffix]
         signature = _image_signature(Path(source["path"]), mime_type)
     else:
