@@ -27,6 +27,9 @@ before publication. Failure and unknown outcome remain explicit terminal/recover
 - Work creation binds filename, MIME type, size, whole-file SHA-256, intent, Person, Workspace,
   current Agent Session, original task ref, and idempotency key.
 - Completion is valid only when every exact part exists and assembled size/SHA-256 match the work.
+- Completing `raw_source`, or any work with `interview`, requires a local instance bound to the
+  current Agent Session (`instance_binding_required` otherwise). Bind, then complete the same work
+  again; parts already uploaded stay.
 
 ## Upload capability boundary
 

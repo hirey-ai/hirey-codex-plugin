@@ -10,7 +10,7 @@ or asks to continue an Agentic Media work.
 This version covers only the first four product steps: receive, prepare, preview, and publish/share on
 HiRey. Social-platform OAuth and posting are a later phase and must not be offered as available.
 
-Start with `hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.33"})`, then call
+Start with `hi_agent_status({"client_plugin_host":"codex","client_plugin_version":"0.2.34"})`, then call
 `workspace_workflows` with `action: catalog`. Read
 [references/control-contract.md](references/control-contract.md) before moving bytes.
 
@@ -49,6 +49,12 @@ idempotency rule, or limit is missing. The live service is authoritative; this l
 guidance, not permission to invent a missing operation.
 
 ## Upload the local file
+
+First bind this computer's local instance with the `hi-instance` skill (`agent_instance.current`
+makes it idempotent). Without one, `agentic_media.upload.complete` for `raw_source`, or for any upload
+with `interview`, is refused with `instance_binding_required`. If complete returns that error, bind
+with `hi-instance` and call `agentic_media.upload.complete` again for the same work; the uploaded
+parts are kept, so do not upload them again.
 
 Require `agentic_media.work.create` describe to return `transport_policy` with
 `accepted_suffixes_by_intent`, maximum bytes, default/minimum/maximum part sizes, maximum parts, and

@@ -46,8 +46,12 @@ returned bounds. Keep filters and limit identical when continuing a cursor.
 The Core-owned shelves are `to_you`, `need_answers`, `requests`, `subscribed`,
 and `own`. Use the returned `shelf`; never reconstruct Need-answer membership
 from unread state, text, or local conversation heuristics. Core's
-`message_need_answer` owns that decision. Existing Brief and announcement events
-can be subscribed; this does not imply a new Follow-hit producer.
+`message_need_answer` owns that decision. The `subscribed` shelf also discovers
+received Person Follow updates, Briefs and announcements. For Follow updates, use
+summary/reference first and `inbox.get` only for a selected item; current source
+withdrawal or Unfollow can remove its readable body. Pause keeps received public
+items but stops new arrivals; resuming does not backfill. Do not turn subscription
+reception into an automatic host reminder, a message or contact permission.
 
 Read the returned inbox `items`; label each with its server-returned
 `workspace.name` and `workspace.type`. `visible_in_workspaces` lists authorized
