@@ -1,14 +1,16 @@
 ---
 name: hi-pages
-description: Prepare private HiRey Page drafts in batches for people a Connector has recorded, using existing Hi records and optional professional enrichment. Resume an interrupted batch and return exact private previews. Use for batch Page preparation, not publication or outreach.
+description: Prepare private HiRey Page drafts in batches for people a Connector has recorded, using existing Hi records and optional professional enrichment. Resume an interrupted batch and return exact private previews. Use for batch Page preparation, not outreach. HiRey's Page writer follows HiRey's default publication rule for people who have not joined; say so before starting it.
 ---
 
 # Batch private HiRey Pages
 
 Turn a Connector's selected recorded people into useful, source-attributed private Page drafts.
-Use the current Agent to select evidence and write content; use `workspace_workflows` for Hi facts
-and writes. Run through the selected batch, isolating incomplete people so others can finish.
-This skill grants no publication, messaging, identity merge or new Capture authority.
+Prefer HiRey's Page writer (`page.prepare.start`, below): it researches and writes each Page with
+HiRey's own rules. Use the current Agent to select people and clues; use `workspace_workflows` for
+Hi facts and writes. Run through the selected batch, isolating incomplete people so others can finish.
+This skill grants no publication call, messaging, identity merge or new Capture authority; HiRey's
+own default publication after its Page writer finishes is described below.
 
 The bundled [batch helper](scripts/page_batch.py) keeps a local execution index, persisted requests
 and receipts. It does not call Hi, authenticate, run in the background or own Page state. Saved
@@ -43,7 +45,32 @@ source pagination and the helper commands; read it before the first batch.
    Preserve the path in the response so another local session can resume it. Never overwrite an
    existing batch or silently add people to its frozen target set.
 
-## Prepare each private draft
+## Prefer HiRey's Page writer
+
+For each selected person who has not joined HiRey, call `page.prepare.start` with only
+`idempotency_key`, `subject_person_id` and, when you have them, `clues`: what you know about the
+person from the Connector's records and words (company, role, school, how they met), at most 1000
+characters, pieces separated by `;`, no contact details. Your words are used only as clues; with no
+clues HiRey uses the Connector's own notes. Never send `trigger`. HiRey's Page writer then
+researches and writes the private draft in the background, and the Connector's Rey reports the
+result to them. The result is the research Work (`work_id`, `status`, `existing`): report it as
+started, not as a finished draft. `page_prepare_clue_required` means only a name is known: ask the
+Connector for one fact about the person. It is never for the Connector's own Page
+(`page_prepare_own_page`: their own Page is written with `page.compose`).
+
+What happens after it finishes is HiRey's normal rule, not a private-only draft: for a person who
+has not joined HiRey, the finished draft goes live by default after 24 hours as the Connector's
+publication (the Connector can review it in HiRey before then); the person can change or remove
+it once they join. Tell the Connector this when you start it. A thin draft you save with
+`page.draft` for such a person also starts HiRey's Page writer, so it follows the same rule.
+HiRey has no draft for a person who has not joined that stays private indefinitely: when the
+Connector says nothing about a person may go live, do not write that person's Page to HiRey; say
+why and keep the draft local.
+
+Write a draft yourself with the steps below only when the Connector dictates exact wording or
+asks you to write it yourself.
+
+## Prepare each private draft (writing it yourself)
 
 Recheck the live Person and Workspace at session start, after any account/focus change, and before
 resuming writes. Feed that current scope to every helper command; copying the stored scope does
@@ -72,8 +99,9 @@ not prove current access. Hi remains the authority for every call.
   are not owner-confirmed facts. Exclude wrong-person or `left_out` candidates; use the edited
   value for an `edited` candidate. Leave uncertainty visible and missing facts empty. Do not
   import contact details, sensitive traits, third-party photos or copied source bodies.
-- For this first slice, the current Agent drafts from authorized readable material directly.
-  This helper never calls `page.compose`.
+- When writing it yourself, the current Agent drafts from authorized readable material directly.
+  This helper never calls `page.compose`. Write in English, without meta-talk about sources
+  ("according to the Connector's notes", "not yet confirmed").
   No eligible Capture is required for an old Diary record, and no new meeting may be fabricated.
 - `page.draft.content` replaces the entire content object. Start from the fresh `content_json`,
   preserve existing fields and human edits, then apply the supported additions. Persist this
@@ -113,16 +141,17 @@ request's successful receipt is recovered. Never make a fresh-key retry of an un
 For a returned business refusal, fix only the affected in-scope input; account, scope and identity
 failures stop affected writes. Provider no-match should still allow an honest source-only draft.
 
-Finish with each person's exact private preview, distinguishing newly saved, reused, awaiting
-research, insufficient/ambiguous evidence and failed items. Show unknown/failed items honestly;
+Finish with each person's exact private preview, distinguishing newly saved, reused, started with
+HiRey's Page writer (with its default publication window), awaiting research,
+insufficient/ambiguous evidence and failed items. Show unknown/failed items honestly;
 do not mark a batch complete simply because every API returned a response. Use the existing
 authenticated preview:
 
 `https://hirey.ai/me?page_draft_id=<URL-encoded acquired ID>&subject_person_id=<URL-encoded Person ID>#me`
 
 The link requires the proper signed-in identity and Workspace and grants no access itself. Also
-provide a brief readable content preview when useful. The result is private; never label a draft
-as published, and do not call `page.authorize`, `page.publish`, `claim.*` or message tools from
+provide a brief readable content preview when useful. A draft is private until it goes live (see HiRey's default publication
+window above); never label a draft as published, and do not call `page.authorize`, `page.publish`, `claim.*` or message tools from
 this workflow. A later explicit publication request uses the current Page authority and exact
 reviewed revisions through the existing Hi publication workflow.
 
