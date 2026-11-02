@@ -75,15 +75,28 @@ It records no issuance, returns no historical body snapshot, and is incompatible
 with `agent_history`. Preserve filters and bounds when continuing recovery.
 Never replace this path with a Person-global watermark or claim exactly-once delivery.
 
-When the owner explicitly asks to view a particular Message, first describe the
-live `inbox.get` contract, then use payload `{item_ref, mark_read:true}`. This is
-the owner's authorized detail-open receipt for that exact incoming Message, not
-proof of comprehension, reply or completion. Show the returned detail; do not
-mark every history item as read. Background/internal inspection omits `mark_read`.
-If the live contract lacks `mark_read`, fetch the selected detail and use the
-existing described `message.read` flow for its exact Message after showing it;
-do not pass an unsupported field or claim that the read receipt succeeded when
-its write failed. Never mark read merely to clear counts or resolve reminder noise.
+When the owner explicitly asks to view a particular Message or workspace
+announcement, first describe the live `inbox.get` contract, then use payload
+`{item_ref, mark_read:true}`. This is the owner's authorized detail-open receipt
+for that exact incoming Message or announcement, not proof of comprehension,
+reply or completion. Show the returned detail; do not mark every history item as
+read on a detail open. Background/internal inspection omits `mark_read`. If the
+live contract lacks `mark_read`, fetch the selected detail and use the existing
+described `message.read` flow for its exact Message after showing it; do not
+pass an unsupported field or claim that the read receipt succeeded when its
+write failed. When the owner explicitly asks to mark unread messages as read
+without opening each one (including "mark all as read" or "mark read without
+viewing"), first describe `message.read`, then call `message.read` with
+`{all_unread:true, idempotency_key}` to mark all currently visible unread
+incoming messages and workspace announcements across active authorized
+Workspaces, or `{conversation_id, idempotency_key}` to mark all unread incoming
+messages in a specific conversation (or `{message_id, idempotency_key}` for a
+single message). Pending stranger Requests and pending contact requests are
+decisions, not unread message receipts, and are not cleared by `message.read`;
+when the owner wants to clear them, identify the sender/requester and execute
+`message.requests.decline` / `message.requests.let_through` or
+`contact.introduction_decide` on the owner's explicit decision. Never auto-mark
+read from a background check, reminder or list scan without the owner's instruction.
 
 Open internal details with `action: inbox.get`, payload `{item_ref}`. Details use current
 object authority without changing focus. Message history is bounded;

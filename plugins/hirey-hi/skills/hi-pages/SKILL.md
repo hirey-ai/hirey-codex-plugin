@@ -59,7 +59,7 @@ Connector for one fact about the person. It is never for the Connector's own Pag
 (`page_prepare_own_page`: their own Page is written with `page.compose`).
 
 What happens after it finishes is HiRey's normal rule, not a private-only draft: for a person who
-has not joined HiRey, the finished draft goes live by default after 24 hours as the Connector's
+has not joined HiRey, the finished draft goes live by default after 72 hours as the Connector's
 publication (the Connector can review it in HiRey before then); the person can change or remove
 it once they join. Tell the Connector this when you start it. A thin draft you save with
 `page.draft` for such a person also starts HiRey's Page writer, so it follows the same rule.

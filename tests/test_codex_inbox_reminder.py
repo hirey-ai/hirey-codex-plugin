@@ -299,7 +299,8 @@ class InboxReminderHookTests(unittest.TestCase):
     def test_ir15_attempted_items_become_cold_and_repeat_only_after_interval(self):
         self.config(cold_repeat_seconds=600)
         remote = FakeRemote([receipt("cp-1", new=2), receipt("cp-2", historical=2),
-                             receipt("cp-3", historical=2)])
+                             receipt("cp-3", historical=2), receipt("cp-4", historical=2),
+                             receipt("cp-5", new=1, historical=2)])
         self.run_hook(remote)
         with patch.dict(os.environ, CODEX_SESSION_ID="session-a"):
             hook.command_record(self.hint()["record_id"], "attempted", "提醒两条消息")
@@ -309,6 +310,12 @@ class InboxReminderHookTests(unittest.TestCase):
         self.clock.advance(301)
         self.assertIn("历史积压", self.run_hook(remote)["hookSpecificOutput"]["additionalContext"])
         self.assertEqual([r["data"]["hint_kind"] for r in self.events("hint_offered")], ["hot", "cold"])
+        self.clock.advance(601)
+        self.assertEqual(self.run_hook(remote), {})
+        self.assertEqual([r["data"]["hint_kind"] for r in self.events("hint_offered")], ["hot", "cold"])
+        self.clock.advance(301)
+        self.assertEqual(self.run_hook(remote)["systemMessage"], "Hi：有 1 条新消息，都来自王某，要看吗？")
+        self.assertEqual([r["data"]["hint_kind"] for r in self.events("hint_offered")], ["hot", "cold", "hot"])
 
     # [IR-22]
     def test_ir22_window_rollover_closes_hot_batch_without_claiming_completion(self):

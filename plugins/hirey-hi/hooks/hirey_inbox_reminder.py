@@ -670,6 +670,7 @@ def run(event, client_factory=HookClient, installation=_installation):
         after['last_seen_checkpoint'] = result['checkpoint']
         after['last_success_at'] = result['checked_at']
         hot = result['messages']['new_count'] + result['contact_requests']['new_count']
+        total = result['messages']['total_count'] + result['contact_requests']['total_count']
         if batch and not hot:
             after['pending_batch'] = None
             close_reason = 'no_hot_items'
@@ -677,14 +678,18 @@ def run(event, client_factory=HookClient, installation=_installation):
             batch = deepcopy(batch)
             batch['latest_checkpoint'] = result['checkpoint']
             after['pending_batch'] = batch
+            after['last_cold_hint_id'] = None
             close_reason = None
         elif hot:
             after['pending_batch'] = {'batch_id': uuid.uuid4().hex, 'from_checkpoint': before['last_seen_checkpoint'],
                                       'latest_checkpoint': result['checkpoint'], 'created_at': result['checked_at'],
                                       'last_hint_id': None, 'last_hint_at': None, 'hint_count': 0, 'attempt_count': 0}
+            after['last_cold_hint_id'] = None
             close_reason = None
         else:
             close_reason = None
+        if not total:
+            after['last_cold_hint_id'] = None
         state['scopes'][scope] = after
         data = {'input_checkpoint': checkpoint, 'checkpoint': result['checkpoint'], 'checked_at': result['checked_at'],
                 'messages': {k: result['messages'][k] for k in ('new_count', 'historical_count', 'total_count', 'new_sender_count', 'new_system_count')},
@@ -705,8 +710,8 @@ def run(event, client_factory=HookClient, installation=_installation):
             # A candidate is not a reminder. The installation cadence bounds
             # retries; skipped/lost output must never exhaust a pending batch.
             kind = 'hot'
-        elif result['messages']['total_count'] or result['contact_requests']['total_count']:
-            if elapsed(after['last_any_hint_at'], config['cold_repeat_seconds']):
+        elif total:
+            if after.get('last_cold_hint_id') is None and elapsed(after['last_any_hint_at'], config['cold_repeat_seconds']):
                 kind = 'cold'
         if kind is None:
             return {}
